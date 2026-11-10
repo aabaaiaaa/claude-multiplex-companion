@@ -25,6 +25,23 @@ test("reconnects on its own after the connection drops", async ({ context }) => 
   const hellos = (await deskReceived(desk)).filter(m => m.type === "hello");
   expect(hellos).toHaveLength(2);
   expect(hellos[1].clientId).toBe(hellos[0].clientId);
+  // And then it stays connected, rather than tearing its new connection down again.
+  await phone.waitForTimeout(8000);
+  expect(await desk.evaluate(() => window.desk.connections)).toBe(2);
+  await expect(phone.locator(".status")).toHaveText("Connected");
+});
+
+test("receives a conversation far bigger than one data-channel message", async ({ context }) => {
+  const id = deskId();
+  const desk = await openDesk(context, id);
+  const phone = await openPhone(context, id);
+  await expect(phone.locator(".status")).toHaveText("Connected");
+  await phone.locator(".session-list li").first().click();
+  const long = "Sample text. ".repeat(4000);
+  await desk.evaluate(text => window.desk.send({ type: "conversation", sessionId: "session-1", mtimeMs: 2,
+    entries: [{ kind: "turn", prompt: "Tell me a lot", items: [{ kind: "text", text }] }] }), long);
+  await expect(phone.locator(".chat .you")).toHaveText("Tell me a lot");
+  expect(await phone.locator(".chat .claude").textContent()).toBe(long);
 });
 
 test("remembers the pairing when the page is reopened without the link", async ({ context }) => {

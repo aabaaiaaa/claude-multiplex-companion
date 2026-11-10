@@ -81,12 +81,13 @@ export class Connection {
 
   connect() {
     this.timer = null;
-    this.peer?.destroy();
+    this.dropPeer();
     const peer = new Peer(crypto.randomUUID(), peerOptions(this.pairing.server));
     this.peer = peer;
     peer.on("open", () => {
       if (peer !== this.peer) return;
-      const conn = peer.connect(this.pairing.peer, { serialization: "json", reliable: true });
+      // Binary, so PeerJS splits large messages; its JSON mode drops anything over ~16 KB.
+      const conn = peer.connect(this.pairing.peer, { serialization: "binary", reliable: true });
       this.conn = conn;
       conn.on("open", () => {
         if (conn !== this.conn) return;
@@ -124,19 +125,27 @@ export class Connection {
     this.connect();
   }
 
+  /** Detach before destroying: PeerJS fires "disconnected" and "close" from destroy(). */
+  dropPeer() {
+    const peer = this.peer;
+    this.peer = null;
+    this.conn = null;
+    peer?.destroy();
+  }
+
+  /** Whether the message went: false while not connected. */
   send(message) {
-    if (this.conn?.open) this.conn.send({ v: 1, ...message });
+    if (!this.conn?.open) return false;
+    this.conn.send({ v: 1, ...message });
+    return true;
   }
 
   end(reason) {
     if (this.status === "ended") return;
     clearTimeout(this.timer);
     this.timer = null;
-    this.conn = null;
     store(() => localStorage.removeItem(PAIRING_KEY));
-    const peer = this.peer;
-    this.peer = null;
-    peer?.destroy();
+    this.dropPeer();
     this.setStatus("ended");
     this.onEnded(reason);
   }

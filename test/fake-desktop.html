@@ -15,6 +15,7 @@
   let conn = null;
   const desk = {
     received: [],
+    refuse: false,
     connections: 0,
     sessions: example("sessions").sessions,
     send(m) { conn?.send({ v: 1, ...m }); },
@@ -23,7 +24,11 @@
   };
   window.desk = desk;
   peer.on("connection", c => {
-    c.on("open", () => { conn = c; desk.connections += 1; });
+    c.on("open", () => {
+      if (desk.refuse) { c.close(); return; }
+      conn = c;
+      desk.connections += 1;
+    });
     c.on("data", m => {
       desk.received.push(m);
       if (m.type === "hello") {

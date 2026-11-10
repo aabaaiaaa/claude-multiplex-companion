@@ -1,7 +1,7 @@
 # Protocol
 
-The page and the desktop app exchange JSON messages over a PeerJS data connection, opened with
-`serialization: "json"`. Every message is `{ "v": 1, "type": ..., ... }`. A side ignores any type
+The page and the desktop app exchange messages over a PeerJS data connection, opened with
+`serialization: "binary"`, so PeerJS splits large messages into chunks; its JSON mode drops anything over about 16 KB. Every message is `{ "v": 1, "type": ..., ... }`. A side ignores any type
 it doesn't know. Example messages for every type are in `test/fixtures/messages.json`, and the
 desktop app keeps an identical copy.
 

@@ -141,6 +141,18 @@ test("answers several questions at once, one choice each", async ({ context }) =
   await expect.poll(() => lastOfType(desk, "answer")).toMatchObject({ cardId: "card-5", choice: { kind: "options", indices: [2, 1] } });
 });
 
+test("keeps a prompt and an answer that couldn't be sent while reconnecting", async ({ context }) => {
+  const { desk, phone } = await paired(context, LIVE);
+  await openFirst(phone, desk);
+  await sendCard(desk, { id: "card-7", kind: "permission", toolName: "Bash", summary: "ls", options: [{ label: "Yes" }, { label: "No" }] });
+  await expect(phone.locator(".card")).toBeVisible();
+  await desk.evaluate(() => { window.desk.refuse = true; window.desk.closeConnection(); });
+  await expect(phone.locator(".status")).toHaveText("Reconnecting…");
+  await phone.locator(".card button", { hasText: "Yes" }).click();
+  await expect(phone.locator(".toast")).toContainText("Not connected");
+  await expect(phone.locator(".card button", { hasText: "Yes" })).toBeEnabled();
+});
+
 test("shows an error from the app", async ({ context }) => {
   const { desk, phone } = await paired(context);
   await desk.evaluate(() => window.desk.send({ type: "error", message: "That prompt was already answered" }));

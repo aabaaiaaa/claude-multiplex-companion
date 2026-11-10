@@ -113,9 +113,14 @@ function renderChat(entries) {
 
 // ---- Composer: the prompt card and the prompt box ---------------------------
 
+const NOT_CONNECTED = "Not connected. Try again once it reconnects.";
+
 function answer(card, choice) {
+  if (!connection.send({ type: "answer", sessionId: state.openId, cardId: card.id, choice })) {
+    toast(NOT_CONNECTED);
+    return;
+  }
   state.answered.add(card.id);
-  connection.send({ type: "answer", sessionId: state.openId, cardId: card.id, choice });
   for (const b of $(".card").querySelectorAll("button, input")) b.disabled = true;
 }
 
@@ -234,7 +239,10 @@ $(".prompt-form").addEventListener("submit", e => {
   const input = $(".prompt-input");
   const text = input.value.trim();
   if (!text || !state.openId) return;
-  connection.send({ type: "sendPrompt", sessionId: state.openId, text });
+  if (!connection.send({ type: "sendPrompt", sessionId: state.openId, text })) {
+    toast(NOT_CONNECTED);
+    return;
+  }
   input.value = "";
 });
 
