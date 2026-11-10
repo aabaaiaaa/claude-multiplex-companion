@@ -138,6 +138,15 @@ fieldset { border: 0; margin: 0 0 10px; padding: 0; }
   border: 1px solid var(--border); border-radius: 8px; background: var(--panel); color: var(--text);
 }
 
+.diagnostics { margin: 8px 16px 0; font-size: 13px; color: var(--muted); }
+.diagnostics summary { cursor: pointer; }
+.diagnostics-copy { margin: 6px 0; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); color: var(--text); padding: 4px 10px; }
+.diagnostics-log {
+  max-height: 50vh; overflow: auto; margin: 0; padding: 8px; border-radius: 6px;
+  background: var(--panel); font: 11px/1.4 ui-monospace, Consolas, monospace;
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}
+
 .toast {
   position: fixed; left: 16px; right: 16px; bottom: 96px; z-index: 3;
   padding: 10px 14px; border-radius: 8px;

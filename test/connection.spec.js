@@ -74,6 +74,20 @@ test("ends the pairing when the app has gone", async ({ context }) => {
   await expect(phone.locator(".ended-text")).toContainText("scan the code");
 });
 
+test("logs each connection step under Connection details, ready to copy", async ({ context }) => {
+  const id = deskId();
+  await openDesk(context, id);
+  const phone = await openPhone(context, id);
+  await expect(phone.locator(".status")).toHaveText("Connected");
+  await phone.locator(".diagnostics summary").click();
+  const log = phone.locator(".diagnostics-log");
+  await expect(log).toContainText("Pairing server: connected");
+  await expect(log).toContainText("Direct connection: open");
+  await expect(log).toContainText("ICE connection state: connected");
+  await expect(log).toContainText("local candidate: host");
+  await expect(phone.locator(".diagnostics-copy")).toBeVisible();
+});
+
 test("asks for a scan when it was never paired", async ({ page }) => {
   await page.goto("/index.html");
   await expect(page.locator(".screen-unpaired")).toBeVisible();

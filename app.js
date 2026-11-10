@@ -276,7 +276,26 @@ function onMessage(m) {
   }
 }
 
+// ---- Connection details ----------------------------------------------------
+
+const LOG_LIMIT = 300;
+const logLines = [];
+const started = Date.now();
+
+function logLine(text) {
+  const t = ((Date.now() - started) / 1000).toFixed(1).padStart(6);
+  logLines.push(`${t}s  ${text}`);
+  if (logLines.length > LOG_LIMIT) logLines.shift();
+  $(".diagnostics-log").textContent = logLines.join("\n");
+}
+
+$(".diagnostics-copy").addEventListener("click", () => {
+  const text = [navigator.userAgent, ...logLines].join("\n");
+  navigator.clipboard?.writeText(text).then(() => toast("Copied"), () => toast("Couldn't copy; select the text instead"));
+});
+
 const connection = new Connection({
+  onLog: logLine,
   onStatus(status) {
     const s = $(".status");
     s.textContent = STATUS_TEXT[status];
