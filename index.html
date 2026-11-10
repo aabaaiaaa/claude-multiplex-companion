@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="color-scheme" content="light dark" />
+  <title>claude-multiplex companion</title>
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js"></script>
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+  <header class="top">
+    <button type="button" class="back" hidden aria-label="Back to sessions">‹</button>
+    <h1 class="title">Sessions</h1>
+    <span class="status" data-status="connecting">Connecting…</span>
+  </header>
+
+  <main>
+    <section class="screen screen-unpaired" hidden>
+      <p>Open <strong>Settings → Phone companion</strong> in claude-multiplex on your computer, press
+        <strong>Pair a phone</strong>, and scan the code with this phone's camera.</p>
+    </section>
+
+    <section class="screen screen-ended" hidden>
+      <p class="ended-text">Pairing ended. To connect again, scan the code in claude-multiplex.</p>
+    </section>
+
+    <section class="screen screen-list" hidden>
+      <ul class="session-list"></ul>
+      <p class="empty" hidden>No sessions are open in the app.</p>
+    </section>
+
+    <section class="screen screen-chat" hidden>
+      <div class="chat"></div>
+    </section>
+  </main>
+
+  <footer class="composer" hidden>
+    <div class="card" hidden></div>
+    <form class="prompt-form">
+      <textarea class="prompt-input" rows="2" placeholder="Message Claude…"></textarea>
+      <button type="submit" class="send">Send</button>
+    </form>
+    <p class="prompt-reason" hidden></p>
+  </footer>
+
+  <div class="toast" role="status" hidden></div>
+  <p class="version"></p>
+</body>
+</html>

@@ -1,0 +1,17 @@
+{
+  "name": "claude-multiplex-companion",
+  "private": true,
+  "description": "A phone page for seeing and answering claude-multiplex sessions over a direct peer-to-peer connection.",
+  "type": "module",
+  "scripts": {
+    "serve": "http-server . -p 8123 -c-1",
+    "peer": "peerjs --port 9123 --path /",
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.65.0",
+    "http-server": "^14.1.1",
+    "peer": "^1.0.2",
+    "peerjs": "1.5.5"
+  }
+}
