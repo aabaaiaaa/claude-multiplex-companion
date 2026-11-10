@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Scripted desktop peer</title>
+  <script src="https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js"></script>
+</head>
+<body>
+<script type="module">
+  // Plays the desktop app's side of PROTOCOL.md for the tests.
+  const id = new URLSearchParams(location.search).get("id");
+  const fixtures = await (await fetch("fixtures/messages.json")).json();
+  const example = type => fixtures.appToPhone.find(m => m.type === type);
+  const peer = new Peer(id, { host: "localhost", port: 9123, path: "/", secure: false, config: { iceServers: [] } });
+  let conn = null;
+  const desk = {
+    received: [],
+    connections: 0,
+    sessions: example("sessions").sessions,
+    send(m) { conn?.send({ v: 1, ...m }); },
+    closeConnection() { conn?.close(); conn = null; },
+    destroy() { peer.destroy(); },
+  };
+  window.desk = desk;
+  peer.on("connection", c => {
+    c.on("open", () => { conn = c; desk.connections += 1; });
+    c.on("data", m => {
+      desk.received.push(m);
+      if (m.type === "hello") {
+        c.send({ v: 1, type: "welcome", deviceId: m.clientId });
+        c.send({ v: 1, type: "sessions", sessions: desk.sessions });
+      }
+      if (m.type === "openSession") {
+        const convo = example("conversation");
+        c.send({ ...convo, sessionId: m.sessionId });
+        c.send({ v: 1, type: "prompt", sessionId: m.sessionId, card: null });
+      }
+    });
+  });
+  await new Promise(resolve => peer.on("open", resolve));
+  window.deskReady = true;
+</script>
+</body>
+</html>
