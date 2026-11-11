@@ -85,6 +85,7 @@ test("logs each connection step under Connection details, ready to copy", async 
   await expect(log).toContainText("Direct connection: open");
   await expect(log).toContainText("ICE connection state: connected");
   await expect(log).toContainText("local candidate: host");
+  await expect(log).toContainText("remote candidate received: host");
   await expect(phone.locator(".diagnostics-copy")).toBeVisible();
 });
 

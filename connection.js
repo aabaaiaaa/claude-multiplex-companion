@@ -42,6 +42,14 @@ function clientId() {
   return id;
 }
 
+/** "host udp" from a candidate line, plus whether its address is a hidden name; never the address. */
+export function describeCandidateLine(line) {
+  const parts = line.replace(/^a=/, "").split(" ");
+  const typ = parts.indexOf("typ");
+  const type = (typ >= 0 && parts[typ + 1]) || "?";
+  return `${type} ${(parts[2] ?? "?").toLowerCase()}${parts[4]?.endsWith(".local") ? " (mDNS name)" : ""}`;
+}
+
 function peerOptions(server) {
   if (!server) return { config: { iceServers: CLOUD_ICE_SERVERS } };
   const [host, port] = server.split(":");
@@ -144,6 +152,19 @@ export class Connection {
     if (!pc) return;
     pc.addEventListener("icegatheringstatechange", () => this.log(`ICE gathering: ${pc.iceGatheringState}`));
     pc.addEventListener("iceconnectionstatechange", () => this.log(`ICE connection state: ${pc.iceConnectionState}`));
+    pc.addEventListener("signalingstatechange", () => this.log(`Signalling state: ${pc.signalingState}`));
+    // PeerJS hands each address the computer sends to this; logging here shows whether any arrive.
+    const add = pc.addIceCandidate.bind(pc);
+    pc.addIceCandidate = async candidate => {
+      const line = candidate?.candidate;
+      if (line) this.log(`remote candidate received: ${describeCandidateLine(line)}`);
+      try {
+        await add(candidate);
+      } catch (err) {
+        this.log(`remote candidate rejected: ${err?.name ?? "error"}`);
+        throw err;
+      }
+    };
     pc.addEventListener("icecandidate", e => {
       const c = e.candidate;
       if (c) this.log(`local candidate: ${c.type ?? "?"} ${c.protocol ?? ""}${c.address?.endsWith(".local") ? " (mDNS name)" : ""}`);
