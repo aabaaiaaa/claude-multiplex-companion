@@ -26,6 +26,12 @@
     },
     {
       "v": 1,
+      "type": "loadEarlier",
+      "sessionId": "session-1",
+      "before": 3
+    },
+    {
+      "v": 1,
       "type": "disconnect"
     },
     {
@@ -132,6 +138,7 @@
       "entries": [
         {
           "kind": "turn",
+          "index": 0,
           "prompt": "Add a test for the parser",
           "items": [
             {
@@ -148,6 +155,27 @@
             {
               "kind": "text",
               "text": "Added the test."
+            }
+          ]
+        }
+      ],
+      "hasEarlier": true
+    },
+    {
+      "v": 1,
+      "type": "earlier",
+      "sessionId": "session-1",
+      "before": 3,
+      "hasEarlier": false,
+      "entries": [
+        {
+          "kind": "turn",
+          "index": 2,
+          "prompt": "Read the old parser",
+          "items": [
+            {
+              "kind": "text",
+              "text": "It splits on commas."
             }
           ]
         }

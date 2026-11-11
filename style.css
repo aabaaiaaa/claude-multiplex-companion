@@ -98,6 +98,12 @@ main { padding: 12px 16px 24px; }
 }
 
 .chat { display: flex; flex-direction: column; gap: 8px; padding-bottom: 8px; }
+/* The row above the oldest turn shown, while there are earlier ones to fetch. */
+.chat .earlier {
+  align-self: center; margin-bottom: 4px; padding: 6px 14px;
+  border: 1px solid var(--border); border-radius: 999px;
+  background: var(--panel); color: var(--muted); font-size: 0.8125rem;
+}
 .you, .claude { white-space: pre-wrap; overflow-wrap: anywhere; }
 .you {
   align-self: flex-end; max-width: 88%;

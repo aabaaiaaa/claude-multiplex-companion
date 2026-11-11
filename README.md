@@ -4,7 +4,8 @@ A phone page for claude-multiplex, a desktop app that runs several Claude Code s
 by side. Scan the QR code from the phone button (📱) in the app's top bar, and this page connects
 straight to the app. From the page you can:
 - see your sessions;
-- read each one's conversation, with tool calls folded into groups;
+- read each one's conversation, with tool calls folded into groups: the last hour of it, with
+  earlier turns fetched as you scroll up, and dropped again once you're back at the end;
 - type prompts, which show faded until Claude has them;
 - answer Claude's permission prompts and questions;
 - start a session that isn't running.

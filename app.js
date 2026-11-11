@@ -27,10 +27,19 @@ const state = {
   cards: new Map(),
   answered: new Set(),
   status: "connecting",
-  /** Prompts sent but not yet in the transcript, per session: { text, seen, sentAt }. */
+  /** Prompts sent but not yet in the transcript, per session: { text, after, sentAt }, where
+   *  `after` is the newest turn number shown when it was sent. */
   ghosts: new Map(),
-  /** The open session's last conversation, so ghosts can be redrawn without a new one. */
+  /** The open session's live window from the app: its latest turns, rolling forward. */
   entries: [],
+  /** Turns before the live window, loaded by scrolling up; dropped again once you're back at the
+   *  end and the window moves on, so the chat doesn't keep growing. */
+  earlier: [],
+  /** Whether there are turns before the first one shown, and whether a page of them is on its way. */
+  moreEarlier: false,
+  loadingEarlier: false,
+  /** The turn number the page on its way was asked to end before. */
+  requestedBefore: null,
   /** When Claude's last reply came, what it was, and when you last typed or sent. */
   lastResponseAt: null,
   responseKey: null,
@@ -90,6 +99,9 @@ function renderList() {
 function openSession(id) {
   state.openId = id;
   state.entries = [];
+  state.earlier = [];
+  state.moreEarlier = false;
+  state.loadingEarlier = false;
   state.lastResponseAt = null;
   state.responseKey = null;
   // Opening a session isn't typing: an earlier reply's age shows as soon as the conversation arrives.
@@ -117,19 +129,20 @@ function isPrompt(prompt, text) {
   const b = promptKey(text);
   return a === b || (b.length >= 20 && a.includes(b.slice(0, 80)));
 }
-const promptCount = (entries, text) => entries.filter(t => t.prompt && isPrompt(t.prompt, text)).length;
+/** The turns as given, each with its turn number (an older app sends none: then its position). */
+const numbered = entries => entries.map((t, i) => (Number.isInteger(t.index) ? t : { ...t, index: i }));
+const newestIndex = entries => entries.reduce((n, t) => Math.max(n, t.index), -1);
 
-/** A ghost goes once the transcript holds one more copy of its prompt than when it was sent,
- *  or once a ghost sent after it has gone: prompts reach the transcript in the order sent. */
+/** A ghost goes once a turn newer than any shown when it was sent holds its prompt, or once a
+ *  ghost sent after it has gone: prompts reach the transcript in the order sent. */
 function settleGhosts(sessionId, entries) {
   const ghosts = state.ghosts.get(sessionId);
   if (!ghosts) return;
-  const used = new Map();
+  const used = new Set();
   const landed = ghosts.map(g => {
-    const key = promptKey(g.text);
-    const taken = used.get(key) ?? 0;
-    if (promptCount(entries, g.text) - g.seen <= taken) return false;
-    used.set(key, taken + 1);
+    const turn = entries.find(t => t.index > g.after && !used.has(t.index) && t.prompt && isPrompt(t.prompt, g.text));
+    if (!turn) return false;
+    used.add(turn.index);
     return true;
   });
   const last = landed.lastIndexOf(true);
@@ -138,11 +151,23 @@ function settleGhosts(sessionId, entries) {
   else state.ghosts.delete(sessionId);
 }
 
-function renderChat(entries) {
-  state.entries = entries;
+const nearEnd = () => window.innerHeight + window.scrollY >= document.body.scrollHeight - 80;
+
+/** Draws the earlier turns, then the live window, then pending prompts. `keepPlace`: turns were
+ *  added above, so the view stays on what you were reading rather than jumping. */
+function renderChat({ keepPlace = false } = {}) {
+  const entries = [...state.earlier, ...state.entries];
   const chat = $(".chat");
-  const nearBottom = window.innerHeight + window.scrollY >= document.body.scrollHeight - 80;
+  const nearBottom = !keepPlace && nearEnd();
+  const heightBefore = document.documentElement.scrollHeight;
   chat.replaceChildren();
+  if (state.moreEarlier || state.loadingEarlier) {
+    const top = el("button", "earlier", state.loadingEarlier ? "Loading earlier turns…" : "Show earlier turns");
+    top.type = "button";
+    top.disabled = state.loadingEarlier;
+    top.addEventListener("click", loadEarlier);
+    chat.append(top);
+  }
   const ghosts = state.ghosts.get(state.openId) ?? [];
   if (entries.length === 0 && ghosts.length === 0) chat.append(el("p", "loading", "Nothing in this conversation yet."));
   for (const turn of entries) {
@@ -170,9 +195,59 @@ function renderChat(entries) {
     chat.append(el("div", "you ghost", g.text), note);
   }
   renderGhostNotes();
-  if (nearBottom) window.scrollTo(0, document.body.scrollHeight);
+  if (keepPlace) window.scrollBy(0, document.documentElement.scrollHeight - heightBefore);
+  else if (nearBottom) window.scrollTo(0, document.body.scrollHeight);
   renderJumps();
 }
+
+/** A new live window. Back at the end, the earlier turns go and the chat rolls on; scrolled up
+ *  reading, they stay, and turns the window has moved past join them, so nothing you were
+ *  reading vanishes from the middle. */
+function takeLiveWindow(entries, hasEarlier) {
+  const live = numbered(entries);
+  const firstLive = live[0]?.index ?? Infinity;
+  if (nearEnd() || !state.entries.length) {
+    state.earlier = [];
+    state.moreEarlier = !!hasEarlier;
+    state.loadingEarlier = false;
+  } else {
+    const passed = state.entries.filter(t => t.index < firstLive && !state.earlier.some(e => e.index === t.index));
+    if (passed.length && !state.earlier.length) state.moreEarlier = state.moreEarlier || !!hasEarlier;
+    state.earlier = [...state.earlier, ...passed].filter(t => t.index < firstLive);
+    if (!state.earlier.length) state.moreEarlier = !!hasEarlier;
+  }
+  state.entries = live;
+}
+
+/** Asks for the page of turns before the first one shown. */
+function loadEarlier() {
+  if (!state.openId || !state.moreEarlier || state.loadingEarlier) return;
+  const first = state.earlier[0] ?? state.entries[0];
+  if (!first) return;
+  if (!connection.send({ type: "loadEarlier", sessionId: state.openId, before: first.index })) {
+    toast(NOT_CONNECTED);
+    return;
+  }
+  state.loadingEarlier = true;
+  state.requestedBefore = first.index;
+  renderChat({ keepPlace: true });
+}
+
+/** A page of earlier turns: added above, keeping your place. */
+function takeEarlier(m) {
+  if (m.sessionId !== state.openId || m.before !== state.requestedBefore) return;
+  const page = numbered(m.entries ?? []);
+  const shown = new Set([...state.earlier, ...state.entries].map(t => t.index));
+  state.earlier = [...page.filter(t => !shown.has(t.index)), ...state.earlier];
+  state.moreEarlier = !!m.hasEarlier && page.length > 0;
+  state.loadingEarlier = false;
+  renderChat({ keepPlace: true });
+}
+
+// Scrolling to the top fetches the turns before it.
+window.addEventListener("scroll", () => {
+  if (window.scrollY < 80 && state.openId && !$(".screen-chat").hidden) loadEarlier();
+}, { passive: true });
 
 // ---- Jumping to Claude's last response, and to the end ---------------------------
 
@@ -360,10 +435,9 @@ $(".prompt-form").addEventListener("submit", e => {
   fitInput();
   noteActivity();
   const ghosts = state.ghosts.get(state.openId) ?? [];
-  const seen = promptCount(state.entries, text) + ghosts.filter(g => isPrompt(g.text, text)).length;
-  ghosts.push({ text, seen, sentAt: Date.now() });
+  ghosts.push({ text, after: newestIndex(state.entries), sentAt: Date.now() });
   state.ghosts.set(state.openId, ghosts);
-  renderChat(state.entries);
+  renderChat();
 });
 
 $(".back").addEventListener("click", closeSession);
@@ -417,10 +491,10 @@ function noteActivity() {
   renderSince();
 }
 
-/** What Claude has said so far, to tell a new reply from a refresh of the same one. */
+/** Claude's latest reply, to tell a new one from a refresh, or from the window moving on. */
 const replyKey = entries => {
-  const items = entries.flatMap(t => t.items ?? []);
-  return `${items.length}:${JSON.stringify(items.at(-1) ?? null)}`;
+  const turn = entries.at(-1);
+  return turn ? `${turn.index}:${turn.items.length}:${JSON.stringify(turn.items.at(-1) ?? null)}` : "";
 };
 
 /** A conversation for the open session: a changed reply restarts the clock. */
@@ -526,7 +600,7 @@ function dropRefusedGhost() {
   if (!ghosts.length) state.ghosts.delete(state.openId);
   $(".prompt-input").value ||= last.text;
   fitInput();
-  renderChat(state.entries);
+  renderChat();
 }
 
 // ---- Today's spend ---------------------------------------------------------------
@@ -557,9 +631,15 @@ function onMessage(m) {
       }
       break;
     case "conversation":
-      if (Array.isArray(m.entries)) settleGhosts(m.sessionId, m.entries);
-      if (m.sessionId === state.openId && Array.isArray(m.entries)) noteConversation(m.entries, m.mtimeMs);
-      if (m.sessionId === state.openId && Array.isArray(m.entries)) renderChat(m.entries);
+      if (!Array.isArray(m.entries)) break;
+      settleGhosts(m.sessionId, numbered(m.entries));
+      if (m.sessionId !== state.openId) break;
+      noteConversation(numbered(m.entries), m.mtimeMs);
+      takeLiveWindow(m.entries, m.hasEarlier);
+      renderChat();
+      break;
+    case "earlier":
+      takeEarlier(m);
       break;
     case "prompt":
       if (m.card) state.cards.set(m.sessionId, m.card);

@@ -32,6 +32,7 @@ A wrong, spent or expired code gets `goodbye` `refused`. `auth.js` holds the cod
 | `listSessions` | none |
 | `openSession` | `sessionId`: the app then sends `conversation` and `prompt` for it until another `openSession` or `closeSession` |
 | `closeSession` | none |
+| `loadEarlier` | `sessionId`, `before`: the turn number to fetch the turns before; the app answers with `earlier` |
 | `disconnect` | none: the person ended the pairing from the page; the app ends it too, as if ended there |
 | `sendPrompt` | `sessionId`, `text` |
 | `resumeSession` | `sessionId`: starts a session whose row has `canResume` |
@@ -45,7 +46,8 @@ A wrong, spent or expired code gets `goodbye` `refused`. `auth.js` holds the cod
 | `authed` | `proof`, and `deviceKey` after a `"pair"`: see *The pairing check* |
 | `welcome` | `deviceId`, `appVersion`: the app's version, such as `"0.25.0"`; apps before 0.25.0 leave it out |
 | `sessions` | `sessions: [{id, name, state, live, canType, pending, canResume}]` |
-| `conversation` | `sessionId`, `mtimeMs`, `entries: [{kind:"turn", prompt?, items: [{kind:"text",text} \| {kind:"tools",labels}]}]` |
+| `conversation` | `sessionId`, `mtimeMs`, `entries: [{kind:"turn", index, prompt?, items: [{kind:"text",text} \| {kind:"tools",labels}]}]`, `hasEarlier`. The entries are a window that rolls forward: the last hour's turns, at least the latest 5 and at most 30. `index` is the transcript's turn number. `hasEarlier` says there are turns before the window |
+| `earlier` | `sessionId`, `before`, `entries`: up to 10 turns before turn `before`, `hasEarlier`: there are more before those |
 | `prompt` | `sessionId`, `card`: a permission card `{id, kind:"permission", toolName, summary, options:[{label}]}`, a question card `{id, kind:"question", questions:[{header, question, multiSelect, options:[{label, description?}]}]}`, the app's own question `{id, kind:"confirm", title, body, options:[{label}]}` (such as the over-budget reminder before it starts a session; the first option goes ahead), or `null` once it's answered |
 | `error` | `message` |
 | `goodbye` | `reason`: `"disconnected"` (ended in the app), `"replaced"` (this phone connected to the app again, from another tab or browser) or `"refused"` (the pairing check failed) |

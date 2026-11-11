@@ -546,3 +546,90 @@ test("jumps up to Claude's last response, and down to the end", async ({ context
   await expect(up).toBeHidden();
   await expect(down).toBeVisible();
 });
+
+/** Turns numbered `from` to `to`, each a prompt and a reply long enough to fill a screen in a few. */
+const turns = (from, to) => Array.from({ length: to - from + 1 }, (_, n) => ({
+  kind: "turn", index: from + n, prompt: `Prompt ${from + n}`, items: [{ kind: "text", text: `Reply ${from + n}.\n${"More text. ".repeat(30)}` }],
+}));
+const liveWindow = (desk, from, to, hasEarlier = true) => desk.evaluate(([e, more]) =>
+  window.desk.send({ type: "conversation", sessionId: "session-1", mtimeMs: Date.now(), entries: e, hasEarlier: more }), [turns(from, to), hasEarlier]);
+const prompts = phone => phone.locator(".chat .you").allTextContents();
+
+test("shows the live window, and earlier turns above it a page at a time", async ({ context }) => {
+  const { desk, phone } = await paired(context, LIVE);
+  await openFirst(phone, desk);
+  await liveWindow(desk, 30, 34);
+  await expect(phone.locator(".chat .you")).toHaveCount(5);
+  const earlier = phone.locator(".chat .earlier");
+  await expect(earlier).toHaveText("Show earlier turns");
+  await earlier.click();
+  await expect.poll(() => lastOfType(desk, "loadEarlier")).toMatchObject({ sessionId: "session-1", before: 30 });
+  await expect(earlier).toHaveText("Loading earlier turns…");
+  // Where the first turn sat before the page arrived, so the view can be checked for jumping.
+  const firstLive = phone.locator(".chat .you", { hasText: "Prompt 30" });
+  const before = (await firstLive.boundingBox()).y;
+  await desk.evaluate(e => window.desk.send({ type: "earlier", sessionId: "session-1", before: 30, entries: e, hasEarlier: true }), turns(20, 29));
+  await expect(phone.locator(".chat .you")).toHaveCount(15);
+  expect((await prompts(phone))[0]).toBe("Prompt 20");
+  expect(Math.abs((await firstLive.boundingBox()).y - before), "the turn being read stays put").toBeLessThan(40);
+  await expect(earlier).toHaveText("Show earlier turns");
+  // The start of the conversation: no more to fetch.
+  await earlier.click();
+  await expect.poll(() => lastOfType(desk, "loadEarlier")).toMatchObject({ before: 20 });
+  await desk.evaluate(e => window.desk.send({ type: "earlier", sessionId: "session-1", before: 20, entries: e, hasEarlier: false }), turns(15, 19));
+  await expect(phone.locator(".chat .you")).toHaveCount(20);
+  await expect(earlier).toHaveCount(0);
+});
+
+test("fetches earlier turns when you scroll to the top", async ({ context }) => {
+  const { desk, phone } = await paired(context, LIVE);
+  await openFirst(phone, desk);
+  await liveWindow(desk, 30, 39);
+  await expect(phone.locator(".chat .you")).toHaveCount(10);
+  await phone.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  await phone.mouse.wheel(0, -100000);
+  await expect.poll(() => lastOfType(desk, "loadEarlier")).toMatchObject({ before: 30 });
+});
+
+test("rolls on, dropping the earlier turns, once you're back at the end", async ({ context }) => {
+  const { desk, phone } = await paired(context, LIVE);
+  await openFirst(phone, desk);
+  await liveWindow(desk, 30, 34);
+  await phone.locator(".chat .earlier").click();
+  await expect.poll(() => lastOfType(desk, "loadEarlier")).toBeDefined();
+  await desk.evaluate(e => window.desk.send({ type: "earlier", sessionId: "session-1", before: 30, entries: e, hasEarlier: true }), turns(20, 29));
+  await expect(phone.locator(".chat .you")).toHaveCount(15);
+  // Back at the end, a new turn moves the window on: just the window again.
+  await phone.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  await liveWindow(desk, 31, 35);
+  await expect(phone.locator(".chat .you")).toHaveCount(5);
+  expect((await prompts(phone))[0]).toBe("Prompt 31");
+  await expect(phone.locator(".chat .earlier")).toHaveText("Show earlier turns");
+});
+
+test("keeps what you're reading while scrolled up, even as the window moves on", async ({ context }) => {
+  const { desk, phone } = await paired(context, LIVE);
+  await openFirst(phone, desk);
+  await liveWindow(desk, 30, 39);
+  await phone.evaluate(() => window.scrollTo(0, 0));
+  await liveWindow(desk, 32, 41);
+  // Turns 30 and 31 left the window but stay above it, so nothing vanishes mid-read.
+  const shown = await prompts(phone);
+  expect(shown[0]).toBe("Prompt 30");
+  expect(shown.at(-1)).toBe("Prompt 41");
+  expect(shown).toHaveLength(12);
+});
+
+test("clears a pending prompt sent twice in a row, though the window moves on", async ({ context }) => {
+  const { desk, phone } = await paired(context, LIVE);
+  await openFirst(phone, desk);
+  await desk.evaluate(e => window.desk.send({ type: "conversation", sessionId: "session-1", mtimeMs: Date.now(), hasEarlier: true, entries: e }),
+    [{ kind: "turn", index: 8, prompt: "continue", items: [] }, { kind: "turn", index: 9, prompt: "continue", items: [] }]);
+  await phone.locator(".prompt-input").fill("continue");
+  await phone.locator(".send").click();
+  await expect(phone.locator(".chat .you.ghost")).toHaveCount(1);
+  // The window drops turn 8 as turn 10 arrives: the same number of "continue"s, but a new one.
+  await desk.evaluate(e => window.desk.send({ type: "conversation", sessionId: "session-1", mtimeMs: Date.now(), hasEarlier: true, entries: e }),
+    [{ kind: "turn", index: 9, prompt: "continue", items: [] }, { kind: "turn", index: 10, prompt: "continue", items: [] }]);
+  await expect(phone.locator(".chat .you.ghost")).toHaveCount(0);
+});
