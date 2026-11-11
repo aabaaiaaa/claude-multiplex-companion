@@ -25,10 +25,33 @@ export function fromBase64Url(text) {
   }
 }
 
-/** "sha-256 AB:CD:…" from a description's first `a=fingerprint:` line, or null without one. */
-export function fingerprintOf(sdp) {
-  const m = /^a=fingerprint:(\S+) ([0-9A-Fa-f:]+)\s*$/m.exec(sdp ?? "");
-  return m ? `${m[1].toLowerCase()} ${m[2].toUpperCase()}` : null;
+/**
+ * The certificate fingerprints of the DTLS link actually in use, from WebRTC's stats rather than
+ * the descriptions: a description can list fingerprints the link doesn't use, and the other end's
+ * came through the signalling server. Null when the stats don't say.
+ */
+export async function negotiatedFingerprints(pc) {
+  if (!pc) return null;
+  const byId = new Map();
+  const transports = [];
+  (await pc.getStats()).forEach(s => {
+    if (typeof s.id === "string") byId.set(s.id, s);
+    if (s.type === "transport") transports.push(s);
+  });
+  const fingerprint = id => {
+    const cert = typeof id === "string" ? byId.get(id) : undefined;
+    const alg = cert?.fingerprintAlgorithm;
+    const fp = cert?.fingerprint;
+    return typeof alg === "string" && typeof fp === "string" && /^[0-9A-Fa-f:]+$/.test(fp)
+      ? `${alg.toLowerCase()} ${fp.toUpperCase()}`
+      : null;
+  };
+  // One DTLS transport carries the data channel; more than one with certificates is unexpected.
+  const linked = transports.filter(t => t.localCertificateId && t.remoteCertificateId);
+  if (linked.length !== 1) return null;
+  const local = fingerprint(linked[0].localCertificateId);
+  const remote = fingerprint(linked[0].remoteCertificateId);
+  return local && remote ? { local, remote } : null;
 }
 
 /** What `role` ("phone" or "app") sends to prove it holds `secret` on this connection. */

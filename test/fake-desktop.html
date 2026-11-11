@@ -8,7 +8,7 @@
 <body>
 <script type="module">
   // Plays the desktop app's side of PROTOCOL.md for the tests, the pairing check included.
-  import { fingerprintOf, proof, sameProof, toBase64Url } from "../auth.js";
+  import { negotiatedFingerprints, proof, sameProof, toBase64Url } from "../auth.js";
 
   const params = new URLSearchParams(location.search);
   const id = params.get("id");
@@ -42,7 +42,9 @@
   const newSecret = () => toBase64Url(crypto.getRandomValues(new Uint8Array(32)));
 
   async function check(c, m, nonce) {
-    const fps = { app: fingerprintOf(c.peerConnection.localDescription?.sdp), phone: fingerprintOf(c.peerConnection.remoteDescription?.sdp) };
+    // The desk's side of the link: its own certificate is the local one.
+    const f = await negotiatedFingerprints(c.peerConnection);
+    const fps = { app: f?.local ?? "", phone: f?.remote ?? "" };
     const key = m.kind === "pair" ? desk.code : desk.deviceKey;
     const ok = !!key && sameProof(await proof(key, "phone", nonce, fps.app, fps.phone), m.proof);
     if (!ok) {

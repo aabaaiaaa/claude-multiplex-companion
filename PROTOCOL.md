@@ -13,8 +13,10 @@ Every connection starts with it, and neither side reads anything else first.
 2. The page sends `auth`: `kind` is `"pair"` with the QR link's code, or `"device"` with the key the
    app gave it. `proof` is an HMAC-SHA-256, keyed with that secret (base64url-decoded), over these
    lines joined by `\n`: `cmx-companion phone v1`, the nonce, the app's certificate fingerprint,
-   and the page's. Each end reads both fingerprints from its own descriptions, so a relay in the
-   middle, which sees different ones from each end, can't make a proof that matches.
+   and the page's. Each end reads both fingerprints from WebRTC's stats for the DTLS link in use
+   (the transport's local and remote certificates), not from the descriptions the signalling
+   server relays, so a relay in the middle, which sees different ones from each end, can't make
+   a proof that matches.
 3. The app checks it, then sends `authed`: its own `proof` over the same lines with
    `cmx-companion app v1` first, and, for a `"pair"`, the `deviceKey` the page proves itself with
    from now on. The page checks the proof before it trusts anything, then sends `hello`.

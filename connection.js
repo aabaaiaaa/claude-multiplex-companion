@@ -1,6 +1,6 @@
 // The page's side of the connection to the desktop app (see PROTOCOL.md).
 
-import { fingerprintOf, proof, sameProof } from "./auth.js";
+import { negotiatedFingerprints, proof, sameProof } from "./auth.js";
 
 export const PAIRING_KEY = "cmx-companion-pairing";
 export const CLIENT_KEY = "cmx-companion-client";
@@ -115,9 +115,12 @@ export class Connection {
 
   /** Answers the app's challenge with the code or the device key, bound to this connection. */
   async answerChallenge(conn, nonce) {
-    const fps = this.fingerprints(conn);
+    // Marked at once, so a second challenge on this connection is ignored.
+    conn.challenge = { nonce };
     const kind = this.pairing.code ? "pair" : "device";
     const secret = this.pairing.code ?? this.pairing.deviceKey;
+    const fps = await this.fingerprints(conn);
+    if (conn !== this.conn) return;
     if (!fps) {
       this.log("Pairing check: no certificate fingerprints to check against");
       this.end("unverified");
@@ -131,7 +134,7 @@ export class Connection {
   /** The app's proof back: right, and the page trusts what follows; wrong, and it stops. */
   async checkApp(conn, m) {
     const c = conn.challenge;
-    if (!c) return;
+    if (!c?.fps) return;
     const expected = await proof(c.secret, "app", c.nonce, c.fps.app, c.fps.phone);
     if (conn !== this.conn) return;
     if (!sameProof(expected, m.proof)) {
@@ -153,12 +156,11 @@ export class Connection {
     this.send({ type: "hello", clientId: clientId() });
   }
 
-  /** This connection's two certificate fingerprints, as each end's own description states them. */
-  fingerprints(conn) {
-    const pc = conn.peerConnection;
-    const app = fingerprintOf(pc?.remoteDescription?.sdp);
-    const phone = fingerprintOf(pc?.localDescription?.sdp);
-    return app && phone ? { app, phone } : null;
+  /** This connection's two certificate fingerprints, from the DTLS link itself: from this
+   *  phone's side, the app's is the remote one. */
+  async fingerprints(conn) {
+    const f = await negotiatedFingerprints(conn.peerConnection);
+    return f ? { app: f.remote, phone: f.local } : null;
   }
 
   setStatus(s) {

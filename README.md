@@ -19,7 +19,7 @@ once one is deployed. Claude's `code`, code blocks and
 **bold** show formatted. The prompt box grows as you type. Once nothing has happened for 10
 seconds, the chat says how long ago Claude last replied.
 
-It's a prototype, not yet reviewed for security. The connection is a direct, encrypted WebRTC
+It's a beta, for trying out. The connection is a direct, encrypted WebRTC
 link, and each connection proves both ends hold the pairing's secret before anything else, so
 the PeerJS server that introduces them can't pose as either.
 
