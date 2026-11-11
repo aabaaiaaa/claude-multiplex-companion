@@ -591,6 +591,48 @@ $(".menu-wake").addEventListener("click", () => {
 });
 document.addEventListener("visibilitychange", () => { applyWakeLock(); });
 
+// ---- Buzz when a session needs you -------------------------------------------------
+
+const BUZZ_KEY = "cmx-companion-buzz";
+const BUZZ_PATTERN = [200, 100, 200];
+/** One buzz for several sessions needing you at once. */
+const BUZZ_GAP_MS = 2000;
+
+/** Waiting on you: Claude asking (a card, or Attention), or done with its turn. */
+const needsYou = s => Boolean(s.pending) || s.state === "attention" || s.state === "waiting";
+/** The sessions that needed you at the last list; null until the first, which never buzzes. */
+let needing = null;
+let lastBuzz = 0;
+
+/** Buzzes when a session starts needing you, not for one that already did. Browsers only let a
+ *  page vibrate while it's on screen, and iPhones not at all. */
+function noteNeeds(sessions) {
+  const now = new Set(sessions.filter(needsYou).map(s => s.id));
+  const fresh = needing !== null && [...now].some(id => !needing.has(id));
+  needing = now;
+  if (fresh) buzz();
+}
+
+function buzz() {
+  if (!state.buzz || !("vibrate" in navigator) || document.visibilityState !== "visible") return;
+  const t = Date.now();
+  if (t - lastBuzz < BUZZ_GAP_MS) return;
+  lastBuzz = t;
+  try { navigator.vibrate(BUZZ_PATTERN); } catch { /* not allowed yet */ }
+}
+
+function setBuzz(on, save = true) {
+  state.buzz = on;
+  if (save) try { localStorage.setItem(BUZZ_KEY, on ? "1" : "0"); } catch { /* private mode */ }
+  $(".menu-buzz").setAttribute("aria-checked", String(on));
+}
+
+$(".menu-buzz").hidden = !("vibrate" in navigator);
+$(".menu-buzz").addEventListener("click", () => {
+  setMenu(false);
+  setBuzz(!state.buzz);
+});
+
 /** An error just after sending is the app refusing that prompt: take its ghost back off. */
 function dropRefusedGhost() {
   const ghosts = state.ghosts.get(state.openId);
@@ -622,6 +664,7 @@ function onMessage(m) {
   switch (m.type) {
     case "sessions":
       state.sessions = Array.isArray(m.sessions) ? m.sessions : [];
+      noteNeeds(state.sessions);
       if (state.resuming && state.sessions.find(s => s.id === state.resuming)?.live) state.resuming = null;
       renderList();
       if (state.openId) {
@@ -787,6 +830,10 @@ const connection = new Connection({
 let savedWake = null;
 try { savedWake = localStorage.getItem(WAKE_KEY); } catch { /* private mode */ }
 if (savedWake === "1" && "wakeLock" in navigator) setKeepAwake(true);
+
+let savedBuzz = null;
+try { savedBuzz = localStorage.getItem(BUZZ_KEY); } catch { /* private mode */ }
+setBuzz(savedBuzz !== "0", false);
 
 let savedSize = null;
 try { savedSize = Number(localStorage.getItem(SIZE_KEY)); } catch { /* private mode */ }

@@ -62,7 +62,7 @@ main { flex: 1; }
   background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
 }
-.menu-wake[aria-checked="true"]::after { content: " ✓"; color: var(--accent); }
+.menu-wake[aria-checked="true"]::after, .menu-buzz[aria-checked="true"]::after { content: " ✓"; color: var(--accent); }
 .menu-size { display: flex; align-items: center; gap: 4px; padding: 4px 4px 4px 12px; }
 .menu-size span { flex: 1; }
 .menu .menu-size button { padding: 6px 10px; border: 1px solid var(--border); text-align: center; }

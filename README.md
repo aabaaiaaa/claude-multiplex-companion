@@ -13,11 +13,15 @@ straight to the app. From the page you can:
 The top bar shows today's spend as a share of today's budget. Arrows above the prompt box jump
 to the start of Claude's last response and to the end of the chat.
 
-The menu (☰) goes back to the sessions, keeps the screen on while the page is open, sets the
-text size, shows the connection details, disconnects, and offers a newer version of this page
+The menu (☰) goes back to the sessions, keeps the screen on while the page is open, switches
+off the buzz, sets the text size, shows the connection details, disconnects, and offers a newer version of this page
 once one is deployed. Claude's `code`, code blocks and
 **bold** show formatted. The prompt box grows as you type. Once nothing has happened for 10
 seconds, the chat says how long ago Claude last replied.
+
+While the page is on screen, the phone buzzes when a session starts needing you: Claude has
+finished its turn, or is asking something. Browsers don't let a page vibrate in the background,
+and iPhones don't let it vibrate at all, so there the option isn't shown.
 
 It's a beta, for trying out. The connection is a direct, encrypted WebRTC
 link, and each connection proves both ends hold the pairing's secret before anything else, so

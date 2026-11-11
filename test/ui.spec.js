@@ -314,6 +314,48 @@ test("keeps the screen on from the menu, and remembers it", async ({ context }) 
   await expect.poll(() => phone.evaluate(() => window.wakeCalls)).toEqual(["screen", "release"]);
 });
 
+test("buzzes when a session starts needing you, and can be switched off from the menu", async ({ context }) => {
+  await context.addInitScript(() => {
+    window.buzzes = [];
+    Object.defineProperty(navigator, "vibrate", { configurable: true, value: pattern => { window.buzzes.push(pattern); return true; } });
+  });
+  const { desk, phone } = await paired(context, LIVE);
+  const list = (states, pending = []) => desk.evaluate(([st, pe]) => window.desk.send({ type: "sessions", sessions: [
+    { id: "session-1", name: "parser-work", state: st[0], live: true, canType: true, pending: pe.includes("session-1"), canResume: false },
+    { id: "session-2", name: "docs", state: st[1], live: true, canType: true, pending: pe.includes("session-2"), canResume: false },
+  ] }), [states, pending]);
+  const buzzes = () => phone.evaluate(() => window.buzzes);
+  expect(await buzzes(), "nothing new needed you on connecting").toEqual([]);
+
+  await list(["waiting", "processing"]);
+  await expect.poll(buzzes).toEqual([[200, 100, 200]]);
+  // Still waiting, or asking now instead: the same need, no second buzz.
+  await list(["attention", "processing"], ["session-1"]);
+  await phone.waitForTimeout(300);
+  expect(await buzzes()).toHaveLength(1);
+
+  const toggle = phone.locator(".menu-buzz");
+  await phone.locator(".menu-button").click();
+  await expect(toggle).toHaveAttribute("aria-checked", "true");
+  await toggle.click();
+  await phone.waitForTimeout(2100);
+  await list(["attention", "waiting"], ["session-1"]);
+  await phone.waitForTimeout(300);
+  expect(await buzzes(), "switched off").toHaveLength(1);
+
+  await phone.reload();
+  await phone.locator(".menu-button").click();
+  await expect(toggle).toHaveAttribute("aria-checked", "false");
+});
+
+test("has no buzz option where the browser can't vibrate", async ({ context }) => {
+  await context.addInitScript(() => { delete Navigator.prototype.vibrate; });
+  const { phone } = await paired(context);
+  await phone.locator(".menu-button").click();
+  await expect(phone.locator(".menu-wake")).toBeAttached();
+  await expect(phone.locator(".menu-buzz")).toBeHidden();
+});
+
 test("disconnects from the menu, forgets the pairing, and closes itself", async ({ context }) => {
   await context.addInitScript(() => { window.close = () => { window.closeCalls = (window.closeCalls ?? 0) + 1; }; });
   const { desk, phone } = await paired(context);
