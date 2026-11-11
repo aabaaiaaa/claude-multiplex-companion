@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { deskId, deskReceived, openDesk, openPhone, routePeerjs } from "./helpers.js";
+import { deskId, deskReceived, openDesk, openPhone, routePeerjs, TEST_CODE } from "./helpers.js";
 
 test.beforeEach(async ({ context }) => { await routePeerjs(context); });
 
@@ -54,14 +54,66 @@ test("remembers the pairing when the page is reopened without the link", async (
   await expect.poll(() => desk.evaluate(() => window.desk.connections)).toBe(2);
 });
 
-test("ends the pairing when another device replaces it, and stops retrying", async ({ context }) => {
+test("keeps only the key the app gave it once paired, never the code", async ({ context }) => {
+  const id = deskId();
+  await openDesk(context, id);
+  const phone = await openPhone(context, id);
+  await expect(phone.locator(".status")).toHaveText("Connected");
+  expect(new URL(phone.url()).hash, "the code is out of the address bar").toBe("");
+  const saved = await phone.evaluate(() => JSON.parse(localStorage.getItem("cmx-companion-pairing")));
+  expect(saved.deviceKey).toMatch(/^[\w-]{43}$/);
+  expect(saved.code).toBeUndefined();
+  expect(JSON.stringify(saved)).not.toContain(TEST_CODE);
+});
+
+test("a code the app turns down ends with a request to scan a new one", async ({ context }) => {
+  const id = deskId();
+  const desk = await openDesk(context, id);
+  const phone = await openPhone(context, id, "B".repeat(43));
+  await expect(phone.locator(".screen-ended")).toBeVisible();
+  await expect(phone.locator(".ended-text")).toContainText("turned this code down");
+  await expect(phone.locator(".ended-text")).toContainText("Scan a new one");
+  expect((await deskReceived(desk)).some(m => m.type === "hello"), "nothing is sent past the check").toBe(false);
+});
+
+test("stops, sending nothing, when the other end can't prove it's the app", async ({ context }) => {
+  const id = deskId();
+  const desk = await openDesk(context, id);
+  await desk.evaluate(() => { window.desk.badProof = true; });
+  const phone = await openPhone(context, id);
+  await expect(phone.locator(".screen-ended")).toBeVisible();
+  await expect(phone.locator(".ended-text")).toContainText("couldn't prove");
+  expect((await deskReceived(desk)).map(m => m.type)).toEqual(["auth"]);
+});
+
+test("asks for an update when the app sends no pairing check", async ({ context }) => {
+  const id = deskId();
+  const desk = await openDesk(context, id);
+  await desk.evaluate(() => { window.desk.noAuth = true; });
+  const phone = await openPhone(context, id);
+  await expect(phone.locator(".screen-outdated")).toBeVisible({ timeout: 15_000 });
+  await expect(phone.locator(".outdated-text")).toContainText("an older version");
+});
+
+test("proves itself as the desktop app does, by the shared test vector", async ({ page }) => {
+  await page.goto("/index.html");
+  const result = await page.evaluate(async () => {
+    const v = (await (await fetch("/test/fixtures/messages.json")).json()).authVector;
+    const { proof } = await import("/auth.js");
+    return { v, phone: await proof(v.secret, "phone", v.nonce, v.appFp, v.phoneFp), app: await proof(v.secret, "app", v.nonce, v.appFp, v.phoneFp) };
+  });
+  expect(result.phone).toBe(result.v.phoneProof);
+  expect(result.app).toBe(result.v.appProof);
+});
+
+test("ends the pairing when this phone connects again elsewhere, and stops retrying", async ({ context }) => {
   const id = deskId();
   const desk = await openDesk(context, id);
   const phone = await openPhone(context, id);
   await expect(phone.locator(".status")).toHaveText("Connected");
   await desk.evaluate(() => window.desk.send({ type: "goodbye", reason: "replaced" }));
   await expect(phone.locator(".screen-ended")).toBeVisible();
-  await expect(phone.locator(".ended-text")).toContainText("another device");
+  await expect(phone.locator(".ended-text")).toContainText("connected to the app again");
   await phone.waitForTimeout(3000);
   expect(await desk.evaluate(() => window.desk.connections)).toBe(1);
   await phone.goto("/index.html");

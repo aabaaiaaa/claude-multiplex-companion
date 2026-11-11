@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { deskId, deskReceived, openDesk, openPhone, routePeerjs } from "./helpers.js";
+import { deskId, deskReceived, openDesk, openPhone, phoneLink, routePeerjs } from "./helpers.js";
 
 test.beforeEach(async ({ context }) => { await routePeerjs(context); });
 
@@ -346,7 +346,7 @@ test("says how long since Claude's last reply once things go quiet", async ({ co
   await desk.evaluate(s => { window.desk.sessions = s; }, LIVE);
   const phone = await context.newPage();
   await phone.clock.install();
-  await phone.goto(`/index.html#peer=${id}&server=localhost:9123`);
+  await phone.goto(phoneLink(id));
   await expect(phone.locator(".status")).toHaveText("Connected");
   await openFirst(phone, desk);
   const since = phone.locator(".since");
@@ -400,7 +400,7 @@ test("counts up how long ago a pending prompt was sent", async ({ context }) => 
   await desk.evaluate(s => { window.desk.sessions = s; }, LIVE);
   const phone = await context.newPage();
   await phone.clock.install();
-  await phone.goto(`/index.html#peer=${id}&server=localhost:9123`);
+  await phone.goto(phoneLink(id));
   await expect(phone.locator(".status")).toHaveText("Connected");
   await openFirst(phone, desk);
   await phone.locator(".prompt-input").fill("Run the tests");

@@ -7,7 +7,9 @@
 </head>
 <body>
 <script type="module">
-  // Plays the desktop app's side of PROTOCOL.md for the tests.
+  // Plays the desktop app's side of PROTOCOL.md for the tests, the pairing check included.
+  import { fingerprintOf, proof, sameProof, toBase64Url } from "../auth.js";
+
   const params = new URLSearchParams(location.search);
   const id = params.get("id");
   // ?stall=1: take the phone's offer but never answer, as when no route between the two works.
@@ -21,6 +23,14 @@
     refuse: false,
     /** What the app reports in welcome; null leaves it out, as apps before 0.25.0 do. */
     appVersion: "0.25.0",
+    /** The QR code's secret; the helpers put the same one in the phone's link. */
+    code: params.get("code"),
+    /** What the phone that paired was given, for its reconnects. */
+    deviceKey: null,
+    /** Act as an app from before the pairing check: send no challenge. */
+    noAuth: false,
+    /** Prove the app with the wrong secret, as an impostor would. */
+    badProof: false,
     connections: 0,
     sessions: example("sessions").sessions,
     send(m) { conn?.send({ v: 1, ...m }); },
@@ -28,14 +38,49 @@
     destroy() { peer.destroy(); },
   };
   window.desk = desk;
+
+  const newSecret = () => toBase64Url(crypto.getRandomValues(new Uint8Array(32)));
+
+  async function check(c, m, nonce) {
+    const fps = { app: fingerprintOf(c.peerConnection.localDescription?.sdp), phone: fingerprintOf(c.peerConnection.remoteDescription?.sdp) };
+    const key = m.kind === "pair" ? desk.code : desk.deviceKey;
+    const ok = !!key && sameProof(await proof(key, "phone", nonce, fps.app, fps.phone), m.proof);
+    if (!ok) {
+      c.send({ v: 1, type: "goodbye", reason: "refused" });
+      c.close();
+      return;
+    }
+    const issued = m.kind === "pair" ? newSecret() : undefined;
+    const appProof = await proof(desk.badProof ? newSecret() : key, "app", nonce, fps.app, fps.phone);
+    if (issued) {
+      desk.deviceKey = issued;
+      desk.code = null;
+    }
+    c.authed = true;
+    conn = c;
+    desk.connections += 1;
+    c.send({ v: 1, type: "authed", proof: appProof, ...(issued ? { deviceKey: issued } : {}) });
+  }
+
   peer.on("connection", c => {
+    let nonce = null;
     c.on("open", () => {
       if (desk.refuse) { c.close(); return; }
-      conn = c;
-      desk.connections += 1;
+      if (desk.noAuth) {
+        c.authed = true;
+        conn = c;
+        desk.connections += 1;
+        return;
+      }
+      nonce = newSecret();
+      c.send({ v: 1, type: "challenge", nonce });
     });
     c.on("data", m => {
       desk.received.push(m);
+      if (!c.authed) {
+        if (m.type === "auth" && nonce) check(c, m, nonce);
+        return;
+      }
       if (m.type === "hello") {
         c.send({ v: 1, type: "welcome", deviceId: m.clientId, ...(desk.appVersion === null ? {} : { appVersion: desk.appVersion }) });
         c.send({ v: 1, type: "sessions", sessions: desk.sessions });

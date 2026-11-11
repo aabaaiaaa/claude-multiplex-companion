@@ -18,12 +18,17 @@ once one is deployed. Claude's `code`, code blocks and
 **bold** show formatted. The prompt box grows as you type. Once nothing has happened for 10
 seconds, the chat says how long ago Claude last replied.
 
-It's a prototype: the connection is a direct, encrypted WebRTC link, but pairing has no other
-security yet.
+It's a prototype, not yet reviewed for security. The connection is a direct, encrypted WebRTC
+link, and each connection proves both ends hold the pairing's secret before anything else, so
+the PeerJS server that introduces them can't pose as either.
 
 ## How it connects
 
-- **The QR code** holds this page's address plus the app's PeerJS id, after a `#`.
+- **The QR code** holds this page's address plus the app's PeerJS id and a one-time code, after a
+  `#`. The app shows a new code every 30 seconds, and none works once a phone has paired.
+- **The pairing check:** the page proves it has the code, or later the key the app gave it, and
+  the app proves itself back, both bound to the connection (see [PROTOCOL.md](PROTOCOL.md)). A
+  code that's expired or been used gets a request to scan a new one.
 - **The page** connects to that id over a WebRTC data channel, through the PeerJS cloud server.
   STUN gets it through home routers and mobile data. There's no working relay, so a phone on
   the same Wi-Fi as the computer may not connect: after a stalled attempt the page suggests

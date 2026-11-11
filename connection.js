@@ -1,5 +1,7 @@
 // The page's side of the connection to the desktop app (see PROTOCOL.md).
 
+import { fingerprintOf, proof, sameProof } from "./auth.js";
+
 export const PAIRING_KEY = "cmx-companion-pairing";
 export const CLIENT_KEY = "cmx-companion-client";
 
@@ -17,6 +19,10 @@ const RETRY_MS = [1000, 2000, 5000, 10000];
 /** How long a disconnect waits for the app's goodbye before letting go anyway. */
 const LEAVE_WAIT_MS = 1500;
 
+/** How long to wait for the app's challenge once connected. An app that sends none predates the
+ *  pairing check, so is too old for this page. */
+const CHALLENGE_WAIT_MS = 8000;
+
 /** STUN plus the free openrelay TURN servers, for phones on another network. */
 const CLOUD_ICE_SERVERS = [
   { urls: "stun:stun.l.google.com:19302" },
@@ -30,13 +36,19 @@ function store(get) {
   try { return get(); } catch { return null; }
 }
 
-/** The pairing from the link's `#peer=…&server=…`, else the one this page remembers. */
+/**
+ * The pairing from the link's `#peer=…&k=…&server=…` (`code`: the QR code's secret), else the one
+ * this page remembers (`deviceKey`: the key the app gave it). One with neither can't pass the
+ * pairing check, so it counts as none.
+ */
 export function readPairing(hash) {
   const params = new URLSearchParams(hash.replace(/^#/, ""));
   const peer = params.get("peer");
-  if (peer) return { peer, server: params.get("server") };
+  if (peer) return params.get("k") ? { peer, server: params.get("server"), code: params.get("k") } : null;
   const saved = store(() => JSON.parse(localStorage.getItem(PAIRING_KEY) ?? "null"));
-  return saved && typeof saved.peer === "string" ? saved : null;
+  if (saved && typeof saved.peer === "string" && typeof saved.deviceKey === "string") return saved;
+  store(() => localStorage.removeItem(PAIRING_KEY));
+  return null;
 }
 
 function clientId() {
@@ -65,7 +77,9 @@ function peerOptions(server) {
 /**
  * Statuses: "unpaired", "connecting", "connected", "reconnecting", "ended".
  * `onEnded(reason)` gets "left" (disconnected from this page), "outdated" (the app is too old for
- * this page), "disconnected", "replaced" or "unavailable".
+ * this page), "refused" (the app turned down the pairing check, as for an expired code),
+ * "unverified" (whatever answered couldn't prove it's the app paired with), "disconnected",
+ * "replaced" or "unavailable".
  * `onTrouble()` runs when a direct connection didn't open in time.
  */
 export class Connection {
@@ -90,13 +104,61 @@ export class Connection {
 
   start() {
     this.pairing = readPairing(location.hash);
+    // The code stays out of the address bar and the history; it's kept only until it's used.
+    if (location.hash) history.replaceState(null, "", location.pathname + location.search);
     if (!this.pairing) {
       this.setStatus("unpaired");
       return;
     }
-    store(() => localStorage.setItem(PAIRING_KEY, JSON.stringify(this.pairing)));
-    if (location.hash) history.replaceState(null, "", location.pathname + location.search);
     this.connect();
+  }
+
+  /** Answers the app's challenge with the code or the device key, bound to this connection. */
+  async answerChallenge(conn, nonce) {
+    const fps = this.fingerprints(conn);
+    const kind = this.pairing.code ? "pair" : "device";
+    const secret = this.pairing.code ?? this.pairing.deviceKey;
+    if (!fps) {
+      this.log("Pairing check: no certificate fingerprints to check against");
+      this.end("unverified");
+      return;
+    }
+    conn.challenge = { nonce, secret, fps };
+    this.send({ type: "auth", kind, proof: await proof(secret, "phone", nonce, fps.app, fps.phone) });
+    this.log(`Pairing check: answered with ${kind === "pair" ? "the code" : "this phone's key"}`);
+  }
+
+  /** The app's proof back: right, and the page trusts what follows; wrong, and it stops. */
+  async checkApp(conn, m) {
+    const c = conn.challenge;
+    if (!c) return;
+    const expected = await proof(c.secret, "app", c.nonce, c.fps.app, c.fps.phone);
+    if (conn !== this.conn) return;
+    if (!sameProof(expected, m.proof)) {
+      this.log("Pairing check failed: the other end isn't the app this phone paired with");
+      this.end("unverified");
+      return;
+    }
+    if (typeof m.deviceKey === "string") {
+      // The code is spent: from now on this phone proves itself with its own key.
+      this.pairing = { peer: this.pairing.peer, server: this.pairing.server, deviceKey: m.deviceKey };
+      store(() => localStorage.setItem(PAIRING_KEY, JSON.stringify(this.pairing)));
+    }
+    conn.authed = true;
+    clearTimeout(this.challengeTimer);
+    this.log("Pairing check: passed");
+    this.unavailable = 0;
+    this.attempt = 0;
+    this.setStatus("connected");
+    this.send({ type: "hello", clientId: clientId() });
+  }
+
+  /** This connection's two certificate fingerprints, as each end's own description states them. */
+  fingerprints(conn) {
+    const pc = conn.peerConnection;
+    const app = fingerprintOf(pc?.remoteDescription?.sdp);
+    const phone = fingerprintOf(pc?.localDescription?.sdp);
+    return app && phone ? { app, phone } : null;
   }
 
   setStatus(s) {
@@ -132,13 +194,29 @@ export class Connection {
         clearTimeout(this.openTimer);
         this.log("Direct connection: open");
         this.reportCandidates(conn);
-        this.unavailable = 0;
-        this.attempt = 0;
-        this.setStatus("connected");
-        this.send({ type: "hello", clientId: clientId() });
+        // Connected only once the pairing check passes, both ways.
+        clearTimeout(this.challengeTimer);
+        this.challengeTimer = setTimeout(() => {
+          if (conn !== this.conn || conn.challenge) return;
+          this.log(`No pairing check from the app after ${CHALLENGE_WAIT_MS / 1000}s`);
+          this.end("outdated");
+        }, CHALLENGE_WAIT_MS);
       });
       conn.on("data", m => {
         if (conn !== this.conn || !m || m.v !== 1) return;
+        if (m.type === "goodbye" && m.reason === "refused") {
+          this.log("Pairing check: refused by the app");
+          this.end("refused");
+          return;
+        }
+        if (!conn.authed) {
+          if (m.type === "challenge" && typeof m.nonce === "string" && !conn.challenge) {
+            this.answerChallenge(conn, m.nonce).catch(() => this.end("unverified"));
+          } else if (m.type === "authed" && typeof m.proof === "string") {
+            this.checkApp(conn, m).catch(() => this.end("unverified"));
+          }
+          return;
+        }
         if (m.type === "goodbye") this.end(this.leaving || (m.reason === "replaced" ? "replaced" : "disconnected"));
         else this.onMessage(m);
       });
@@ -257,6 +335,7 @@ export class Connection {
 
   end(reason) {
     if (this.status === "ended") return;
+    clearTimeout(this.challengeTimer);
     clearTimeout(this.timer);
     this.timer = null;
     store(() => localStorage.removeItem(PAIRING_KEY));

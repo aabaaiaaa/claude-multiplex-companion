@@ -1,43 +1,237 @@
 {
   "phoneToApp": [
-    { "v": 1, "type": "hello", "clientId": "phone-7f3a" },
-    { "v": 1, "type": "listSessions" },
-    { "v": 1, "type": "openSession", "sessionId": "session-1" },
-    { "v": 1, "type": "closeSession" },
-    { "v": 1, "type": "disconnect" },
-    { "v": 1, "type": "resumeSession", "sessionId": "session-2" },
-    { "v": 1, "type": "sendPrompt", "sessionId": "session-1", "text": "Add a test for the parser" },
-    { "v": 1, "type": "answer", "sessionId": "session-1", "cardId": "card-1", "choice": { "kind": "option", "index": 0 } },
-    { "v": 1, "type": "answer", "sessionId": "session-1", "cardId": "card-2", "choice": { "kind": "options", "indices": [0, 2] } },
-    { "v": 1, "type": "answer", "sessionId": "session-1", "cardId": "card-2", "choice": { "kind": "text", "text": "Use the shorter name" } },
-    { "v": 1, "type": "answer", "sessionId": "session-1", "cardId": "card-1", "choice": { "kind": "reject" } }
+    {
+      "v": 1,
+      "type": "auth",
+      "kind": "pair",
+      "proof": "ZLEsvUMGRKVw2-DDYf6ROwg6a32cHQO_fEVMo0UXgUc"
+    },
+    {
+      "v": 1,
+      "type": "hello",
+      "clientId": "phone-7f3a"
+    },
+    {
+      "v": 1,
+      "type": "listSessions"
+    },
+    {
+      "v": 1,
+      "type": "openSession",
+      "sessionId": "session-1"
+    },
+    {
+      "v": 1,
+      "type": "closeSession"
+    },
+    {
+      "v": 1,
+      "type": "disconnect"
+    },
+    {
+      "v": 1,
+      "type": "resumeSession",
+      "sessionId": "session-2"
+    },
+    {
+      "v": 1,
+      "type": "sendPrompt",
+      "sessionId": "session-1",
+      "text": "Add a test for the parser"
+    },
+    {
+      "v": 1,
+      "type": "answer",
+      "sessionId": "session-1",
+      "cardId": "card-1",
+      "choice": {
+        "kind": "option",
+        "index": 0
+      }
+    },
+    {
+      "v": 1,
+      "type": "answer",
+      "sessionId": "session-1",
+      "cardId": "card-2",
+      "choice": {
+        "kind": "options",
+        "indices": [
+          0,
+          2
+        ]
+      }
+    },
+    {
+      "v": 1,
+      "type": "answer",
+      "sessionId": "session-1",
+      "cardId": "card-2",
+      "choice": {
+        "kind": "text",
+        "text": "Use the shorter name"
+      }
+    },
+    {
+      "v": 1,
+      "type": "answer",
+      "sessionId": "session-1",
+      "cardId": "card-1",
+      "choice": {
+        "kind": "reject"
+      }
+    }
   ],
   "appToPhone": [
-    { "v": 1, "type": "welcome", "deviceId": "phone-7f3a", "appVersion": "0.25.0" },
-    { "v": 1, "type": "sessions", "sessions": [
-      { "id": "session-1", "name": "parser-work", "state": "waiting", "live": true, "canType": false, "pending": true, "canResume": false },
-      { "id": "session-2", "name": "docs", "state": "resumable", "live": false, "canType": false, "pending": false, "canResume": true }
-    ] },
-    { "v": 1, "type": "conversation", "sessionId": "session-1", "mtimeMs": 1700000000000, "entries": [
-      { "kind": "turn", "prompt": "Add a test for the parser", "items": [
-        { "kind": "text", "text": "I'll look at the parser first." },
-        { "kind": "tools", "labels": ["Read parser.ts", "Grep \"parse\""] },
-        { "kind": "text", "text": "Added the test." }
-      ] }
-    ] },
-    { "v": 1, "type": "prompt", "sessionId": "session-1", "card": {
-      "id": "card-1", "kind": "permission", "toolName": "Bash", "summary": "npm test",
-      "options": [ { "label": "Yes" }, { "label": "Yes, and don't ask again" }, { "label": "No" } ]
-    } },
-    { "v": 1, "type": "prompt", "sessionId": "session-1", "card": {
-      "id": "card-2", "kind": "question", "questions": [
-        { "header": "Name", "question": "Which name should the helper use?", "multiSelect": false,
-          "options": [ { "label": "parseLine", "description": "Matches the other helpers" }, { "label": "readLine" } ] }
+    {
+      "v": 1,
+      "type": "challenge",
+      "nonce": "bm9uY2Utdg"
+    },
+    {
+      "v": 1,
+      "type": "authed",
+      "proof": "V_PUjTlPAJExww1PqbcLvonbQTK69ga0LH1brNWFPP0",
+      "deviceKey": "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA"
+    },
+    {
+      "v": 1,
+      "type": "welcome",
+      "deviceId": "phone-7f3a",
+      "appVersion": "0.25.0"
+    },
+    {
+      "v": 1,
+      "type": "sessions",
+      "sessions": [
+        {
+          "id": "session-1",
+          "name": "parser-work",
+          "state": "waiting",
+          "live": true,
+          "canType": false,
+          "pending": true,
+          "canResume": false
+        },
+        {
+          "id": "session-2",
+          "name": "docs",
+          "state": "resumable",
+          "live": false,
+          "canType": false,
+          "pending": false,
+          "canResume": true
+        }
       ]
-    } },
-    { "v": 1, "type": "prompt", "sessionId": "session-1", "card": null },
-    { "v": 1, "type": "error", "message": "That prompt was already answered" },
-    { "v": 1, "type": "goodbye", "reason": "replaced" },
-    { "v": 1, "type": "usage", "usage": { "percent": 42, "dailyUsd": 12.4, "level": "ok" } }
-  ]
+    },
+    {
+      "v": 1,
+      "type": "conversation",
+      "sessionId": "session-1",
+      "mtimeMs": 1700000000000,
+      "entries": [
+        {
+          "kind": "turn",
+          "prompt": "Add a test for the parser",
+          "items": [
+            {
+              "kind": "text",
+              "text": "I'll look at the parser first."
+            },
+            {
+              "kind": "tools",
+              "labels": [
+                "Read parser.ts",
+                "Grep \"parse\""
+              ]
+            },
+            {
+              "kind": "text",
+              "text": "Added the test."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "v": 1,
+      "type": "prompt",
+      "sessionId": "session-1",
+      "card": {
+        "id": "card-1",
+        "kind": "permission",
+        "toolName": "Bash",
+        "summary": "npm test",
+        "options": [
+          {
+            "label": "Yes"
+          },
+          {
+            "label": "Yes, and don't ask again"
+          },
+          {
+            "label": "No"
+          }
+        ]
+      }
+    },
+    {
+      "v": 1,
+      "type": "prompt",
+      "sessionId": "session-1",
+      "card": {
+        "id": "card-2",
+        "kind": "question",
+        "questions": [
+          {
+            "header": "Name",
+            "question": "Which name should the helper use?",
+            "multiSelect": false,
+            "options": [
+              {
+                "label": "parseLine",
+                "description": "Matches the other helpers"
+              },
+              {
+                "label": "readLine"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "v": 1,
+      "type": "prompt",
+      "sessionId": "session-1",
+      "card": null
+    },
+    {
+      "v": 1,
+      "type": "error",
+      "message": "That prompt was already answered"
+    },
+    {
+      "v": 1,
+      "type": "goodbye",
+      "reason": "replaced"
+    },
+    {
+      "v": 1,
+      "type": "usage",
+      "usage": {
+        "percent": 42,
+        "dailyUsd": 12.4,
+        "level": "ok"
+      }
+    }
+  ],
+  "authVector": {
+    "secret": "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA",
+    "nonce": "bm9uY2Utdg",
+    "appFp": "sha-256 AA:BB:CC",
+    "phoneFp": "sha-256 DD:EE:FF",
+    "phoneProof": "ZLEsvUMGRKVw2-DDYf6ROwg6a32cHQO_fEVMo0UXgUc",
+    "appProof": "V_PUjTlPAJExww1PqbcLvonbQTK69ga0LH1brNWFPP0"
+  }
 }

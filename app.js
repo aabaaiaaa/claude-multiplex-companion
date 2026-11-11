@@ -14,7 +14,9 @@ const STATUS_TEXT = {
 };
 
 const ENDED_TEXT = {
-  replaced: "Pairing ended: another device paired with the app. To connect this phone again, scan the code in claude-multiplex.",
+  replaced: "This page was replaced: this phone connected to the app again, from another tab or browser. To use this one instead, scan a new code in claude-multiplex.",
+  refused: "The app turned this code down: it may have expired, or been used already. Each code works once, for under a minute. Scan a new one in claude-multiplex.",
+  unverified: "Whatever answered couldn't prove it's the app this phone paired with, so this page stopped. Scan a new code in claude-multiplex.",
   disconnected: "Pairing ended in the app. To connect again, scan the code in claude-multiplex.",
   unavailable: "Pairing ended: the app isn't reachable, or it was closed. To connect again, scan the code in claude-multiplex.",
 };
@@ -672,6 +674,10 @@ const connection = new Connection({
       return;
     }
     if (reason === "outdated") {
+      // No welcome, so no version to name: the app predates the pairing check.
+      if (!$(".outdated-text").textContent) {
+        $(".outdated-text").textContent = `This page needs claude-multiplex ${MIN_DESKTOP_VERSION} or later, and the app on your computer is an older version. Update the app, then pair again from its phone button (📱).`;
+      }
       showScreen("outdated");
       return;
     }
@@ -693,7 +699,7 @@ setTextSize(SIZES.includes(savedSize) ? savedSize : 1, false);
 /** How often to look for a newer deploy while the page is open. */
 const UPDATE_CHECK_MS = 5 * 60_000;
 /** Everything the page loads from its own site, fetched afresh before reloading. */
-const PAGE_FILES = ["index.html", "app.js", "connection.js", "desktop-version.js", "format.js", "style.css", "version.js"];
+const PAGE_FILES = ["index.html", "app.js", "auth.js", "connection.js", "desktop-version.js", "format.js", "style.css", "version.js"];
 
 /** The deployed version, read past the browser's cache; null if it can't be read. */
 async function deployedVersion() {

@@ -11,16 +11,22 @@ export async function routePeerjs(context) {
 let counter = 0;
 export const deskId = () => `desk-${Date.now()}-${++counter}`;
 
+/** The QR code's secret for a test desk, base64url like a real one; the same for every test. */
+export const TEST_CODE = "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA";
+
+/** The link a desk's QR code would hold. */
+export const phoneLink = (id, code = TEST_CODE) => `/index.html#peer=${id}&server=localhost:9123&k=${code}`;
+
 export async function openDesk(context, id, { stall = false } = {}) {
   const page = await context.newPage();
-  await page.goto(`/test/fake-desktop.html?id=${id}${stall ? "&stall=1" : ""}`);
+  await page.goto(`/test/fake-desktop.html?id=${id}&code=${TEST_CODE}${stall ? "&stall=1" : ""}`);
   await page.waitForFunction(() => window.deskReady === true);
   return page;
 }
 
-export async function openPhone(context, id) {
+export async function openPhone(context, id, code) {
   const page = await context.newPage();
-  await page.goto(`/index.html#peer=${id}&server=localhost:9123`);
+  await page.goto(phoneLink(id, code));
   return page;
 }
 
