@@ -19,6 +19,8 @@
   const desk = {
     received: [],
     refuse: false,
+    /** What the app reports in welcome; null leaves it out, as apps before 0.25.0 do. */
+    appVersion: "0.25.0",
     connections: 0,
     sessions: example("sessions").sessions,
     send(m) { conn?.send({ v: 1, ...m }); },
@@ -35,7 +37,7 @@
     c.on("data", m => {
       desk.received.push(m);
       if (m.type === "hello") {
-        c.send({ v: 1, type: "welcome", deviceId: m.clientId });
+        c.send({ v: 1, type: "welcome", deviceId: m.clientId, ...(desk.appVersion === null ? {} : { appVersion: desk.appVersion }) });
         c.send({ v: 1, type: "sessions", sessions: desk.sessions });
       }
       if (m.type === "disconnect") {

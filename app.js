@@ -1,4 +1,5 @@
 import { Connection } from "./connection.js";
+import { desktopTooOld, MIN_DESKTOP_VERSION } from "./desktop-version.js";
 import { formatText } from "./format.js";
 import { BUILD_INFO } from "./version.js";
 
@@ -545,6 +546,13 @@ function onMessage(m) {
       else state.cards.delete(m.sessionId);
       if (m.sessionId === state.openId) renderComposer();
       break;
+    case "welcome":
+      if (desktopTooOld(m.appVersion)) {
+        const has = typeof m.appVersion === "string" && m.appVersion ? `version ${m.appVersion}` : "an older version";
+        $(".outdated-text").textContent = `This page needs claude-multiplex ${MIN_DESKTOP_VERSION} or later, and the app on your computer is ${has}. Update the app, then pair again from its phone button (📱).`;
+        connection.disconnect("outdated");
+      }
+      break;
     case "usage":
       renderUsage(m.usage);
       break;
@@ -663,6 +671,10 @@ const connection = new Connection({
       closeSoon();
       return;
     }
+    if (reason === "outdated") {
+      showScreen("outdated");
+      return;
+    }
     $(".ended-text").textContent = ENDED_TEXT[reason] ?? ENDED_TEXT.disconnected;
     showScreen("ended");
   },
@@ -681,7 +693,7 @@ setTextSize(SIZES.includes(savedSize) ? savedSize : 1, false);
 /** How often to look for a newer deploy while the page is open. */
 const UPDATE_CHECK_MS = 5 * 60_000;
 /** Everything the page loads from its own site, fetched afresh before reloading. */
-const PAGE_FILES = ["index.html", "app.js", "connection.js", "format.js", "style.css", "version.js"];
+const PAGE_FILES = ["index.html", "app.js", "connection.js", "desktop-version.js", "format.js", "style.css", "version.js"];
 
 /** The deployed version, read past the browser's cache; null if it can't be read. */
 async function deployedVersion() {
@@ -713,5 +725,5 @@ document.addEventListener("visibilitychange", () => { if (document.visibilitySta
 setInterval(checkForUpdate, UPDATE_CHECK_MS);
 checkForUpdate();
 
-$(".version").textContent = BUILD_INFO.date ? `${BUILD_INFO.version} · ${BUILD_INFO.date}` : BUILD_INFO.version;
+$(".version").textContent = [BUILD_INFO.version, BUILD_INFO.date, `for claude-multiplex ${MIN_DESKTOP_VERSION}+`].filter(Boolean).join(" · ");
 connection.start();

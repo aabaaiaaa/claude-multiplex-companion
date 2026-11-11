@@ -34,6 +34,8 @@ security yet.
 - **While the app keeps the pairing open,** the page reconnects by itself after the phone locks
   or the browser goes to the background, with no new scan.
 - **Disconnect in the app, or closing it,** ends the pairing.
+- **An app too old for this page** gets an update request instead: the page names the oldest
+  version it works with (`desktop-version.js`) and ends the pairing.
 - **Disconnect on the page** ends it too, and the page closes itself after 5 seconds. To connect
   again, scan a new code from the app: the page doesn't look for the app by itself.
 
@@ -56,10 +58,13 @@ served from `node_modules`.
 
 ### Trying it against the desktop app
 
-1. Run `npm run serve`.
-2. Start the desktop app with `CMX_COMPANION_URL=http://localhost:8123/` set, so its QR code links
-   here. It still uses the PeerJS cloud server.
-3. In the app, press the phone button (📱) in the top bar, then **Pair a phone**. Open the link it
+1. Serve the page over https: the app takes only an https:// address. For example, with a local
+   certificate, `npx http-server . -p 8123 -c-1 -S -C cert.pem -K key.pem`.
+2. In the app, set **Settings → Advanced → Device pairing** to that address, such as
+   `https://localhost:8123/`. The phone button shows in the top bar once it's set.
+   `CMX_COMPANION_URL` overrides the setting for one run. The app still uses the PeerJS cloud
+   server.
+3. Press the phone button (📱) in the top bar, then **Pair a phone**. Open the link it
    shows in a desktop browser, or scan it with a phone on the same network (using your machine's
    address instead of `localhost`).
 

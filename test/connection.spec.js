@@ -119,3 +119,48 @@ test("suggests mobile data or another Wi-Fi when the connection stalls, and hide
   await expect(phone.locator(".status")).toHaveText("Connected", { timeout: 30_000 });
   await expect(phone.locator(".trouble")).toBeHidden();
 });
+
+for (const [appVersion, says] of [["0.24.3", "version 0.24.3"], [null, "an older version"]]) {
+  test(`asks for an update and ends the pairing when the app is too old (${appVersion ?? "no version"})`, async ({ context }) => {
+    const id = deskId();
+    const desk = await openDesk(context, id);
+    await desk.evaluate(v => { window.desk.appVersion = v; }, appVersion);
+    const phone = await openPhone(context, id);
+    await expect(phone.locator(".screen-outdated")).toBeVisible();
+    const text = phone.locator(".outdated-text");
+    await expect(text).toContainText("needs claude-multiplex 0.25.0 or later");
+    await expect(text).toContainText(says);
+    await expect(text).toContainText("Update the app");
+    await expect.poll(async () => (await deskReceived(desk)).some(m => m.type === "disconnect")).toBe(true);
+    await expect(phone.locator(".screen-list")).toBeHidden();
+    // Forgotten, so the page waits for a new scan rather than trying the old app again.
+    await phone.goto("/index.html");
+    await expect(phone.locator(".screen-unpaired")).toBeVisible();
+  });
+}
+
+test("works with an app at or past the minimum version", async ({ context }) => {
+  const id = deskId();
+  const desk = await openDesk(context, id);
+  await desk.evaluate(() => { window.desk.appVersion = "0.31.2"; });
+  const phone = await openPhone(context, id);
+  await expect(phone.locator(".screen-list")).toBeVisible();
+  await expect(phone.locator(".screen-outdated")).toBeHidden();
+  await expect(phone.locator(".version")).toContainText("for claude-multiplex 0.25.0+");
+});
+
+test("compares versions part by part", async ({ page }) => {
+  await page.goto("/index.html");
+  const tooOld = (v, min) => page.evaluate(async ([v, min]) => (await import("/desktop-version.js")).desktopTooOld(v, min), [v, min]);
+  expect(await tooOld("0.25.0", "0.25.0")).toBe(false);
+  expect(await tooOld("0.25.1", "0.25.0")).toBe(false);
+  expect(await tooOld("0.30.0", "0.25.0")).toBe(false);
+  expect(await tooOld("1.0.0", "0.25.0")).toBe(false);
+  expect(await tooOld("v0.25.0", "0.25.0")).toBe(false);
+  expect(await tooOld("0.25.0-rc.1", "0.25.0")).toBe(false);
+  expect(await tooOld("0.24.9", "0.25.0")).toBe(true);
+  expect(await tooOld("0.9.0", "0.25.0")).toBe(true);
+  expect(await tooOld("", "0.25.0")).toBe(true);
+  expect(await tooOld(undefined, "0.25.0")).toBe(true);
+  expect(await tooOld("dev", "0.25.0")).toBe(true);
+});

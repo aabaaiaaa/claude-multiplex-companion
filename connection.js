@@ -64,7 +64,8 @@ function peerOptions(server) {
 
 /**
  * Statuses: "unpaired", "connecting", "connected", "reconnecting", "ended".
- * `onEnded(reason)` gets "left" (disconnected from this page), "disconnected", "replaced" or "unavailable".
+ * `onEnded(reason)` gets "left" (disconnected from this page), "outdated" (the app is too old for
+ * this page), "disconnected", "replaced" or "unavailable".
  * `onTrouble()` runs when a direct connection didn't open in time.
  */
 export class Connection {
@@ -138,7 +139,7 @@ export class Connection {
       });
       conn.on("data", m => {
         if (conn !== this.conn || !m || m.v !== 1) return;
-        if (m.type === "goodbye") this.end(this.leaving ? "left" : m.reason === "replaced" ? "replaced" : "disconnected");
+        if (m.type === "goodbye") this.end(this.leaving || (m.reason === "replaced" ? "replaced" : "disconnected"));
         else this.onMessage(m);
       });
       conn.on("close", () => { if (conn === this.conn) { this.log("Direct connection: closed"); this.scheduleRetry(); } });
@@ -241,16 +242,17 @@ export class Connection {
     return true;
   }
 
-  /** Ends the pairing from this page: the app stops waiting for it, and this page forgets it. */
-  disconnect() {
+  /** Ends the pairing from this page: the app stops waiting for it, and this page forgets it.
+   *  `reason` is what `onEnded` gets: "left", or "outdated" when the app is too old for this page. */
+  disconnect(reason = "left") {
     if (this.status === "ended" || this.leaving) return;
-    this.leaving = true;
+    this.leaving = reason;
     if (!this.send({ type: "disconnect" })) {
-      this.end("left");
+      this.end(reason);
       return;
     }
     // Let the message go before the connection does; the app's goodbye ends it sooner.
-    setTimeout(() => this.end("left"), LEAVE_WAIT_MS);
+    setTimeout(() => this.end(reason), LEAVE_WAIT_MS);
   }
 
   end(reason) {

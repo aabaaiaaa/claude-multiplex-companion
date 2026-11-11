@@ -13,7 +13,7 @@
     { "v": 1, "type": "answer", "sessionId": "session-1", "cardId": "card-1", "choice": { "kind": "reject" } }
   ],
   "appToPhone": [
-    { "v": 1, "type": "welcome", "deviceId": "phone-7f3a" },
+    { "v": 1, "type": "welcome", "deviceId": "phone-7f3a", "appVersion": "0.25.0" },
     { "v": 1, "type": "sessions", "sessions": [
       { "id": "session-1", "name": "parser-work", "state": "waiting", "live": true, "canType": false, "pending": true, "canResume": false },
       { "id": "session-2", "name": "docs", "state": "resumable", "live": false, "canType": false, "pending": false, "canResume": true }
