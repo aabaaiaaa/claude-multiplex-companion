@@ -5,8 +5,12 @@ by side. Scan the QR code in the app's **Settings → Phone companion**, and thi
 straight to the app. From the page you can:
 - see your sessions;
 - read each one's conversation, with tool calls folded into groups;
-- type prompts;
-- answer Claude's permission prompts and questions.
+- type prompts, which show faded until Claude has them;
+- answer Claude's permission prompts and questions;
+- start a session that isn't running.
+
+The menu (☰) goes back to the sessions, keeps the screen on while the page is open, and shows
+the connection details.
 
 It's a prototype: the connection is a direct, encrypted WebRTC link, but pairing has no other
 security yet.

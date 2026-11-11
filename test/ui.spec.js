@@ -4,8 +4,8 @@ import { deskId, deskReceived, openDesk, openPhone, routePeerjs } from "./helper
 test.beforeEach(async ({ context }) => { await routePeerjs(context); });
 
 const LIVE = [
-  { id: "session-1", name: "parser-work", state: "idle", live: true, canType: true, pending: false },
-  { id: "session-2", name: "docs", state: "resumable", live: false, canType: false, pending: false },
+  { id: "session-1", name: "parser-work", state: "idle", live: true, canType: true, pending: false, canResume: false },
+  { id: "session-2", name: "docs", state: "resumable", live: false, canType: false, pending: false, canResume: true },
 ];
 
 async function paired(context, sessions) {
@@ -233,4 +233,46 @@ test("closes the menu on a tap elsewhere", async ({ context }) => {
   await expect(phone.locator(".menu")).toBeVisible();
   await phone.locator("main").click({ position: { x: 5, y: 5 } });
   await expect(phone.locator(".menu")).toBeHidden();
+});
+
+test("starts a session that isn't running, then lets you type into it", async ({ context }) => {
+  const { desk, phone } = await paired(context, LIVE);
+  await phone.locator(".session-list li", { hasText: "docs" }).click();
+  const start = phone.locator(".resume");
+  await expect(start).toHaveText("Start this session");
+  await expect(phone.locator(".prompt-input")).toBeDisabled();
+  await start.click();
+  await expect.poll(() => lastOfType(desk, "resumeSession")).toMatchObject({ sessionId: "session-2" });
+  await expect(start).toHaveText("Starting…");
+  await expect(start).toBeDisabled();
+  await desk.evaluate(rows => window.desk.send({ type: "sessions", sessions: rows }),
+    [LIVE[0], { ...LIVE[1], state: "idle", live: true, canType: true, canResume: false }]);
+  await expect(start).toBeHidden();
+  await expect(phone.locator(".prompt-input")).toBeEnabled();
+});
+
+test("keeps the screen on from the menu, and remembers it", async ({ context }) => {
+  await context.addInitScript(() => {
+    window.wakeCalls = [];
+    Object.defineProperty(navigator, "wakeLock", { configurable: true, value: {
+      request: async type => {
+        window.wakeCalls.push(type);
+        const lock = new EventTarget();
+        lock.release = async () => { window.wakeCalls.push("release"); lock.dispatchEvent(new Event("release")); };
+        return lock;
+      },
+    } });
+  });
+  const { phone } = await paired(context);
+  const toggle = phone.locator(".menu-wake");
+  await phone.locator(".menu-button").click();
+  await expect(toggle).toHaveAttribute("aria-checked", "false");
+  await toggle.click();
+  await expect.poll(() => phone.evaluate(() => window.wakeCalls)).toEqual(["screen"]);
+  await phone.reload();
+  await expect.poll(() => phone.evaluate(() => window.wakeCalls)).toEqual(["screen"]);
+  await phone.locator(".menu-button").click();
+  await expect(toggle).toHaveAttribute("aria-checked", "true");
+  await toggle.click();
+  await expect.poll(() => phone.evaluate(() => window.wakeCalls)).toEqual(["screen", "release"]);
 });

@@ -254,10 +254,14 @@ function renderComposer() {
   const reason = card
     ? "Answer the prompt above first."
     : !row?.live
-      ? "This session isn't running in the app."
+      ? (row?.canResume ? "This session isn't running. Start it to carry on." : "This session isn't running in the app.")
       : !row.canType
         ? "Answer the prompt in the app first."
         : "";
+  const canResume = !card && !row?.live && !!row?.canResume;
+  $(".resume").hidden = !canResume;
+  $(".resume").disabled = state.resuming === state.openId;
+  $(".resume").textContent = state.resuming === state.openId ? "Starting…" : "Start this session";
   const input = $(".prompt-input");
   input.disabled = !!reason;
   $(".send").disabled = !!reason;
@@ -284,6 +288,52 @@ $(".prompt-form").addEventListener("submit", e => {
 
 $(".back").addEventListener("click", closeSession);
 
+$(".resume").addEventListener("click", () => {
+  if (!connection.send({ type: "resumeSession", sessionId: state.openId })) {
+    toast(NOT_CONNECTED);
+    return;
+  }
+  state.resuming = state.openId;
+  renderComposer();
+});
+
+// ---- Keep screen on ----------------------------------------------------------
+
+const WAKE_KEY = "cmx-companion-keep-awake";
+let wakeLock = null;
+
+/** Holds the screen on while the page shows; the browser lets go whenever it's hidden. */
+async function applyWakeLock() {
+  if (!state.keepAwake) {
+    const lock = wakeLock;
+    wakeLock = null;
+    await lock?.release().catch(() => {});
+    return;
+  }
+  if (wakeLock || document.visibilityState !== "visible") return;
+  try {
+    wakeLock = await navigator.wakeLock.request("screen");
+    wakeLock.addEventListener("release", () => { wakeLock = null; });
+  } catch {
+    setKeepAwake(false);
+    toast("This browser won't keep the screen on");
+  }
+}
+
+function setKeepAwake(on) {
+  state.keepAwake = on;
+  try { localStorage.setItem(WAKE_KEY, on ? "1" : "0"); } catch { /* private mode */ }
+  $(".menu-wake").setAttribute("aria-checked", String(on));
+  applyWakeLock();
+}
+
+$(".menu-wake").hidden = !("wakeLock" in navigator);
+$(".menu-wake").addEventListener("click", () => {
+  setMenu(false);
+  setKeepAwake(!state.keepAwake);
+});
+document.addEventListener("visibilitychange", () => { applyWakeLock(); });
+
 /** An error just after sending is the app refusing that prompt: take its ghost back off. */
 function dropRefusedGhost() {
   const ghosts = state.ghosts.get(state.openId);
@@ -301,6 +351,7 @@ function onMessage(m) {
   switch (m.type) {
     case "sessions":
       state.sessions = Array.isArray(m.sessions) ? m.sessions : [];
+      if (state.resuming && state.sessions.find(s => s.id === state.resuming)?.live) state.resuming = null;
       renderList();
       if (state.openId) {
         const row = openRow();
@@ -319,6 +370,7 @@ function onMessage(m) {
       break;
     case "error":
       dropRefusedGhost();
+      state.resuming = null;
       toast(String(m.message ?? "Something went wrong"));
       if (state.openId) renderComposer();
       break;
@@ -400,6 +452,10 @@ const connection = new Connection({
     showScreen("ended");
   },
 });
+
+let savedWake = null;
+try { savedWake = localStorage.getItem(WAKE_KEY); } catch { /* private mode */ }
+if (savedWake === "1" && "wakeLock" in navigator) setKeepAwake(true);
 
 $(".version").textContent = BUILD_INFO.date ? `${BUILD_INFO.version} · ${BUILD_INFO.date}` : BUILD_INFO.version;
 connection.start();

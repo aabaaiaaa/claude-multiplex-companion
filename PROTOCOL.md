@@ -14,6 +14,7 @@ desktop app keeps an identical copy.
 | `openSession` | `sessionId`: the app then sends `conversation` and `prompt` for it until another `openSession` or `closeSession` |
 | `closeSession` | none |
 | `sendPrompt` | `sessionId`, `text` |
+| `resumeSession` | `sessionId`: starts a session whose row has `canResume` |
 | `answer` | `sessionId`, `cardId`, `choice`: `{kind:"option",index}`, `{kind:"options",indices}` (multi-select, or one index per question), `{kind:"text",text}` or `{kind:"reject"}` |
 
 ## App → page
@@ -21,7 +22,7 @@ desktop app keeps an identical copy.
 | type | fields |
 |---|---|
 | `welcome` | `deviceId` |
-| `sessions` | `sessions: [{id, name, state, live, canType, pending}]` |
+| `sessions` | `sessions: [{id, name, state, live, canType, pending, canResume}]` |
 | `conversation` | `sessionId`, `mtimeMs`, `entries: [{kind:"turn", prompt?, items: [{kind:"text",text} \| {kind:"tools",labels}]}]` |
 | `prompt` | `sessionId`, `card`: a permission card `{id, kind:"permission", toolName, summary, options:[{label}]}`, a question card `{id, kind:"question", questions:[{header, question, multiSelect, options:[{label, description?}]}]}`, or `null` once it's answered |
 | `error` | `message` |
