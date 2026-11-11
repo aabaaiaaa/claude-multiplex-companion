@@ -92,7 +92,8 @@ function openSession(id) {
   state.entries = [];
   state.lastResponseAt = null;
   state.responseKey = null;
-  state.lastActiveAt = Date.now();
+  // Opening a session isn't typing: an earlier reply's age shows as soon as the conversation arrives.
+  state.lastActiveAt = 0;
   renderSince();
   $(".title").textContent = openRow()?.name ?? "Session";
   $(".chat").replaceChildren(el("p", "loading", "Loading…"));
@@ -215,6 +216,22 @@ function answer(card, choice) {
   for (const b of $(".card").querySelectorAll("button, input")) b.disabled = true;
 }
 
+/** A question the app asks itself before acting for this phone, such as the over-budget
+ *  reminder before it starts a session: the first option goes ahead, the last doesn't. */
+function confirmCard(card) {
+  const box = el("div");
+  box.append(el("p", "card-title", card.title), el("p", "card-body", card.body));
+  const row = el("div", "choices");
+  card.options.forEach((o, index) => {
+    const b = el("button", index === card.options.length - 1 ? "choice choice-no" : "choice", o.label);
+    b.type = "button";
+    b.addEventListener("click", () => answer(card, { kind: "option", index }));
+    row.append(b);
+  });
+  box.append(row);
+  return box;
+}
+
 function permissionCard(card) {
   const box = el("div");
   box.append(el("p", "card-title", `Allow ${card.toolName}?`), el("pre", "summary", card.summary));
@@ -302,6 +319,7 @@ function renderCard(card) {
   box.hidden = !card;
   if (!card) return;
   if (card.kind === "permission") box.append(permissionCard(card));
+  else if (card.kind === "confirm") box.append(confirmCard(card));
   else if (card.questions.length === 1 && !card.questions[0].multiSelect) box.append(singleQuestion(card, card.questions[0]));
   else box.append(choiceQuestions(card));
   if (state.answered.has(card.id)) for (const b of box.querySelectorAll("button, input")) b.disabled = true;

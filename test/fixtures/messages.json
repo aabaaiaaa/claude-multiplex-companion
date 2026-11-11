@@ -208,6 +208,25 @@
     },
     {
       "v": 1,
+      "type": "prompt",
+      "sessionId": "session-2",
+      "card": {
+        "id": "card-9",
+        "kind": "confirm",
+        "title": "You appear to have reached your usage limit",
+        "body": "You're spending faster today than a sustainable pace for the rest of this budget period. Not blocked — just flagging it.",
+        "options": [
+          {
+            "label": "Continue anyway"
+          },
+          {
+            "label": "Cancel"
+          }
+        ]
+      }
+    },
+    {
+      "v": 1,
       "type": "error",
       "message": "That prompt was already answered"
     },

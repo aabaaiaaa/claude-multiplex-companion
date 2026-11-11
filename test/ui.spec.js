@@ -251,6 +251,43 @@ test("starts a session that isn't running, then lets you type into it", async ({
   await expect(phone.locator(".prompt-input")).toBeEnabled();
 });
 
+const overBudget = { id: "card-9", kind: "confirm", title: "You appear to have reached your usage limit",
+  body: "You're spending faster today than a sustainable pace. Not blocked — just flagging it.",
+  options: [{ label: "Continue anyway" }, { label: "Cancel" }] };
+
+test("answers the app's over-budget question before it starts a session", async ({ context }) => {
+  const { desk, phone } = await paired(context, LIVE);
+  await phone.locator(".session-list li", { hasText: "docs" }).click();
+  await phone.locator(".resume").click();
+  await expect.poll(() => lastOfType(desk, "resumeSession")).toMatchObject({ sessionId: "session-2" });
+  await desk.evaluate(card => window.desk.send({ type: "prompt", sessionId: "session-2", card }), overBudget);
+  const card = phone.locator(".card");
+  await expect(card).toContainText("You appear to have reached your usage limit");
+  await expect(card).toContainText("Not blocked");
+  await expect(card.locator("button")).toHaveText(["Continue anyway", "Cancel"]);
+  await expect(phone.locator(".resume"), "the question replaces the start button").toBeHidden();
+  await card.locator("button", { hasText: "Continue anyway" }).click();
+  await expect.poll(() => lastOfType(desk, "answer")).toMatchObject({ sessionId: "session-2", cardId: "card-9", choice: { kind: "option", index: 0 } });
+});
+
+test("says the session wasn't started when the over-budget question is cancelled", async ({ context }) => {
+  const { desk, phone } = await paired(context, LIVE);
+  await phone.locator(".session-list li", { hasText: "docs" }).click();
+  await phone.locator(".resume").click();
+  await desk.evaluate(card => window.desk.send({ type: "prompt", sessionId: "session-2", card }), overBudget);
+  await phone.locator(".card button", { hasText: "Cancel" }).click();
+  await expect.poll(() => lastOfType(desk, "answer")).toMatchObject({ cardId: "card-9", choice: { kind: "option", index: 1 } });
+  // As the app answers a cancel: the question goes, and it says so.
+  await desk.evaluate(() => {
+    window.desk.send({ type: "prompt", sessionId: "session-2", card: null });
+    window.desk.send({ type: "error", message: "Not started" });
+  });
+  await expect(phone.locator(".toast")).toHaveText("Not started");
+  await expect(phone.locator(".card")).toBeHidden();
+  await expect(phone.locator(".resume")).toHaveText("Start this session");
+  await expect(phone.locator(".resume")).toBeEnabled();
+});
+
 test("keeps the screen on from the menu, and remembers it", async ({ context }) => {
   await context.addInitScript(() => {
     window.wakeCalls = [];
@@ -338,6 +375,29 @@ test("grows the prompt box as you type, up to a limit", async ({ context }) => {
   expect(await height()).toBeLessThanOrEqual(phone.viewportSize().height * 0.4 + 1);
   await phone.locator(".send").click();
   await expect.poll(height).toBeLessThan(start + 1);
+});
+
+test("says how long ago an earlier reply came as soon as the session opens", async ({ context }) => {
+  const { desk, phone } = await paired(context, LIVE);
+  // The fake desk answers with its fixture conversation, whose transcript was last written long ago.
+  await phone.locator(".session-list li", { hasText: "parser-work" }).click();
+  await expect(phone.locator(".chat .claude").first()).toBeVisible();
+  // Within a second or so, not ten: opening a session isn't typing.
+  await expect(phone.locator(".since")).toBeVisible({ timeout: 1500 });
+  await expect(phone.locator(".since")).toHaveText(/^Last response from Claude over \d+ hours ago$/);
+
+});
+
+test("leaves room between the end of the chat and the prompt box", async ({ context }) => {
+  const { desk, phone } = await paired(context, LIVE);
+  await openFirst(phone, desk);
+  await desk.evaluate(() => window.desk.send({ type: "conversation", sessionId: "session-1", mtimeMs: Date.now() - 60_000,
+    entries: Array.from({ length: 30 }, (_, n) => ({ kind: "turn", prompt: `Prompt ${n}`, items: [{ kind: "text", text: "Done." }] })) }));
+  await expect(phone.locator(".since")).toBeVisible();
+  await phone.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  const since = await phone.locator(".since").boundingBox();
+  const footer = await phone.locator(".bottom").boundingBox();
+  expect(footer.y - (since.y + since.height), "space above the footer").toBeGreaterThanOrEqual(16);
 });
 
 test("says how long since Claude's last reply once things go quiet", async ({ context }) => {

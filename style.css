@@ -72,7 +72,8 @@ main { flex: 1; }
 .menu-disconnect { color: var(--danger) !important; }
 .menu button { text-align: left; background: none; border: 0; color: var(--text); padding: 10px 12px; border-radius: 6px; }
 
-main { padding: 12px 16px 16px; }
+/* Room below the last of the chat, so it never sits against the footer. */
+main { padding: 12px 16px 24px; }
 .screen p { margin: 0 0 12px; }
 
 .session-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
@@ -110,7 +111,7 @@ main { padding: 12px 16px 16px; }
 .tools summary::marker { color: var(--muted); }
 .tools ul { margin: 4px 0 0; padding-left: 20px; overflow-wrap: anywhere; }
 .loading { color: var(--muted); }
-.since { margin: 0; padding: 4px 0 8px; font-size: 0.8125rem; color: var(--muted); text-align: center; }
+.since { margin: 0; padding: 6px 0 12px; font-size: 0.8125rem; color: var(--muted); text-align: center; }
 .claude code, .code-block {
   font: 0.875em/1.4 ui-monospace, Consolas, monospace;
   background: var(--panel); border: 1px solid var(--border); border-radius: 4px;
@@ -162,6 +163,7 @@ button:disabled, textarea:disabled, input:disabled { opacity: 0.5; }
   max-height: 55vh; overflow-y: auto;
 }
 .card-title { margin: 0 0 8px; font-weight: 600; overflow-wrap: anywhere; }
+.card-body { margin: 0 0 10px; overflow-wrap: anywhere; }
 .card-header { margin: 0 0 2px; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
 .summary {
   margin: 0 0 10px; padding: 8px; border-radius: 6px;
