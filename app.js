@@ -301,12 +301,14 @@ const connection = new Connection({
     s.textContent = STATUS_TEXT[status];
     s.dataset.status = status;
     if (status === "unpaired") showScreen("unpaired");
+    if (status === "connected" || status === "ended") $(".trouble").hidden = true;
     if (status === "connected") {
       if (state.openId) connection.send({ type: "openSession", sessionId: state.openId });
       else showScreen("list");
     }
   },
   onMessage,
+  onTrouble() { $(".trouble").hidden = false; },
   onEnded(reason) {
     $(".ended-text").textContent = ENDED_TEXT[reason] ?? ENDED_TEXT.disconnected;
     state.openId = null;

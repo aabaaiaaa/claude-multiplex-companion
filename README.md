@@ -15,8 +15,11 @@ security yet.
 
 - **The QR code** holds this page's address plus the app's PeerJS id, after a `#`.
 - **The page** connects to that id over a WebRTC data channel, through the PeerJS cloud server.
-  If the phone's network needs it, STUN and the free openrelay TURN servers get it through home
-  routers and mobile data.
+  STUN gets it through home routers and mobile data. There's no working relay, so a phone on
+  the same Wi-Fi as the computer may not connect: after a stalled attempt the page suggests
+  mobile data or another Wi-Fi network.
+- **Connection details,** at the bottom of the page, log each step with a Copy button: states and
+  the kinds of address each side offered, never the addresses.
 - **While the app keeps the pairing open,** the page reconnects by itself after the phone locks
   or the browser goes to the background, with no new scan.
 - **Disconnect in the app, or closing it,** ends the pairing.

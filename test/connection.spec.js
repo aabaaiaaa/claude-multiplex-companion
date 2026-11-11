@@ -93,3 +93,19 @@ test("asks for a scan when it was never paired", async ({ page }) => {
   await page.goto("/index.html");
   await expect(page.locator(".screen-unpaired")).toBeVisible();
 });
+
+test("suggests mobile data or another Wi-Fi when the connection stalls, and hides it once connected", async ({ context }) => {
+  const id = deskId();
+  const stalled = await openDesk(context, id, { stall: true });
+  const phone = await openPhone(context, id);
+  await expect(phone.locator(".trouble")).toBeHidden();
+  await expect(phone.locator(".trouble")).toBeVisible({ timeout: 30_000 });
+  await expect(phone.locator(".trouble")).toContainText("mobile data");
+  await expect(phone.locator(".trouble")).toContainText("different Wi-Fi");
+  // The app comes back reachable: the phone's retry connects and the hint goes.
+  await stalled.evaluate(() => window.desk.destroy());
+  await stalled.close();
+  await openDesk(context, id);
+  await expect(phone.locator(".status")).toHaveText("Connected", { timeout: 30_000 });
+  await expect(phone.locator(".trouble")).toBeHidden();
+});

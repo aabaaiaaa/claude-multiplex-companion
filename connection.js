@@ -8,6 +8,9 @@ const CONNECT_TIMEOUT_MS = 20000;
 /** "The app isn't there" this many times in a row ends the pairing; fewer may be the server. */
 const UNAVAILABLE_LIMIT = 3;
 
+/** ICE states after which WebRTC soon drops its candidate pairs from the stats. */
+const ICE_GAVE_UP = ["disconnected", "failed"];
+
 /** Wait this long before each retry; the last value repeats. */
 const RETRY_MS = [1000, 2000, 5000, 10000];
 
@@ -59,15 +62,17 @@ function peerOptions(server) {
 /**
  * Statuses: "unpaired", "connecting", "connected", "reconnecting", "ended".
  * `onEnded(reason)` gets "disconnected", "replaced" or "unavailable".
+ * `onTrouble()` runs when a direct connection didn't open in time.
  */
 export class Connection {
-  constructor({ onStatus, onMessage, onEnded, onLog = () => {} }) {
+  constructor({ onStatus, onMessage, onEnded, onTrouble = () => {}, onLog = () => {} }) {
     this.onStatus = onStatus;
     this.log = onLog;
     this.unavailable = 0;
     this.openTimer = null;
     this.onMessage = onMessage;
     this.onEnded = onEnded;
+    this.onTrouble = onTrouble;
     this.status = "connecting";
     this.peer = null;
     this.conn = null;
@@ -113,7 +118,10 @@ export class Connection {
       this.openTimer = setTimeout(() => {
         if (conn !== this.conn || conn.open) return;
         this.log(`No direct connection after ${CONNECT_TIMEOUT_MS / 1000}s`);
-        this.reportCandidates(conn).finally(() => this.scheduleRetry());
+        this.onTrouble();
+        // Once ICE has given up, the candidates were already reported.
+        if (ICE_GAVE_UP.includes(conn.peerConnection?.iceConnectionState)) this.scheduleRetry();
+        else this.reportCandidates(conn).finally(() => this.scheduleRetry());
       }, CONNECT_TIMEOUT_MS);
       conn.on("open", () => {
         if (conn !== this.conn) return;
@@ -146,12 +154,20 @@ export class Connection {
     });
   }
 
-  /** Logs how WebRTC gets on: address gathering and the connection's state. */
+  /** Logs how WebRTC gets on: address gathering and the connection's state, and the
+   *  candidates the moment ICE gives up, while its pairs are still in the stats. */
   watchIce(conn) {
     const pc = conn.peerConnection;
     if (!pc) return;
+    let reported = false;
     pc.addEventListener("icegatheringstatechange", () => this.log(`ICE gathering: ${pc.iceGatheringState}`));
-    pc.addEventListener("iceconnectionstatechange", () => this.log(`ICE connection state: ${pc.iceConnectionState}`));
+    pc.addEventListener("iceconnectionstatechange", () => {
+      this.log(`ICE connection state: ${pc.iceConnectionState}`);
+      if (!reported && ICE_GAVE_UP.includes(pc.iceConnectionState)) {
+        reported = true;
+        this.reportCandidates(conn);
+      }
+    });
     pc.addEventListener("signalingstatechange", () => this.log(`Signalling state: ${pc.signalingState}`));
     // PeerJS hands each address the computer sends to this; logging here shows whether any arrive.
     const add = pc.addIceCandidate.bind(pc);

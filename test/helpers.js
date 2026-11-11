@@ -11,9 +11,9 @@ export async function routePeerjs(context) {
 let counter = 0;
 export const deskId = () => `desk-${Date.now()}-${++counter}`;
 
-export async function openDesk(context, id) {
+export async function openDesk(context, id, { stall = false } = {}) {
   const page = await context.newPage();
-  await page.goto(`/test/fake-desktop.html?id=${id}`);
+  await page.goto(`/test/fake-desktop.html?id=${id}${stall ? "&stall=1" : ""}`);
   await page.waitForFunction(() => window.deskReady === true);
   return page;
 }

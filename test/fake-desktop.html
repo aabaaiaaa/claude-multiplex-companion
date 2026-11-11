@@ -8,7 +8,10 @@
 <body>
 <script type="module">
   // Plays the desktop app's side of PROTOCOL.md for the tests.
-  const id = new URLSearchParams(location.search).get("id");
+  const params = new URLSearchParams(location.search);
+  const id = params.get("id");
+  // ?stall=1: take the phone's offer but never answer, as when no route between the two works.
+  if (params.get("stall")) RTCPeerConnection.prototype.setRemoteDescription = () => new Promise(() => {});
   const fixtures = await (await fetch("fixtures/messages.json")).json();
   const example = type => fixtures.appToPhone.find(m => m.type === type);
   const peer = new Peer(id, { host: "localhost", port: 9123, path: "/", secure: false, config: { iceServers: [] } });
