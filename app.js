@@ -1,4 +1,5 @@
 import { Connection } from "./connection.js";
+import { formatText } from "./format.js";
 import { BUILD_INFO } from "./version.js";
 
 const $ = sel => document.querySelector(sel);
@@ -23,11 +24,14 @@ const state = {
   cards: new Map(),
   answered: new Set(),
   status: "connecting",
-  showDetails: false,
   /** Prompts sent but not yet in the transcript, per session: { text, seen, sentAt }. */
   ghosts: new Map(),
   /** The open session's last conversation, so ghosts can be redrawn without a new one. */
   entries: [],
+  /** When Claude's last reply came, what it was, and when you last typed or sent. */
+  lastResponseAt: null,
+  responseKey: null,
+  lastActiveAt: 0,
 };
 
 function el(tag, cls, text) {
@@ -43,6 +47,7 @@ function showScreen(name) {
   $(".back").hidden = !inChat;
   $(".composer").hidden = !inChat;
   if (!inChat) $(".title").textContent = "Sessions";
+  renderJumps();
 }
 
 let toastTimer = null;
@@ -82,10 +87,15 @@ function renderList() {
 function openSession(id) {
   state.openId = id;
   state.entries = [];
+  state.lastResponseAt = null;
+  state.responseKey = null;
+  state.lastActiveAt = Date.now();
+  renderSince();
   $(".title").textContent = openRow()?.name ?? "Session";
   $(".chat").replaceChildren(el("p", "loading", "Loading…"));
   showScreen("chat");
   renderComposer();
+  fitInput();
   connection.send({ type: "openSession", sessionId: id });
 }
 
@@ -96,22 +106,30 @@ function closeSession() {
 }
 
 const promptKey = text => text.replace(/\s+/g, " ").trim();
-const promptCount = (entries, text) => entries.filter(t => t.prompt && promptKey(t.prompt) === promptKey(text)).length;
+/** Whether a transcript prompt is this sent text: the same, or holding the start of a long one,
+ *  as a paste can be stored with more around it. */
+function isPrompt(prompt, text) {
+  const a = promptKey(prompt);
+  const b = promptKey(text);
+  return a === b || (b.length >= 20 && a.includes(b.slice(0, 80)));
+}
+const promptCount = (entries, text) => entries.filter(t => t.prompt && isPrompt(t.prompt, text)).length;
 
-/** A ghost goes once the transcript holds one more copy of its prompt than when it was sent. */
+/** A ghost goes once the transcript holds one more copy of its prompt than when it was sent,
+ *  or once a ghost sent after it has gone: prompts reach the transcript in the order sent. */
 function settleGhosts(sessionId, entries) {
   const ghosts = state.ghosts.get(sessionId);
   if (!ghosts) return;
   const used = new Map();
-  const left = ghosts.filter(g => {
+  const landed = ghosts.map(g => {
     const key = promptKey(g.text);
     const taken = used.get(key) ?? 0;
-    if (promptCount(entries, g.text) - g.seen > taken) {
-      used.set(key, taken + 1);
-      return false;
-    }
+    if (promptCount(entries, g.text) - g.seen <= taken) return false;
+    used.set(key, taken + 1);
     return true;
   });
+  const last = landed.lastIndexOf(true);
+  const left = ghosts.slice(last + 1);
   if (left.length) state.ghosts.set(sessionId, left);
   else state.ghosts.delete(sessionId);
 }
@@ -126,7 +144,11 @@ function renderChat(entries) {
   for (const turn of entries) {
     if (turn.prompt) chat.append(el("div", "you", turn.prompt));
     for (const item of turn.items) {
-      if (item.kind === "text") chat.append(el("div", "claude", item.text));
+      if (item.kind === "text") {
+        const text = el("div", "claude");
+        text.append(...formatText(item.text));
+        chat.append(text);
+      }
       else if (item.kind === "tools") {
         const details = el("details", "tools");
         const n = item.labels.length;
@@ -138,9 +160,44 @@ function renderChat(entries) {
       }
     }
   }
-  for (const g of ghosts) chat.append(el("div", "you ghost", g.text), el("span", "ghost-note", "Sent, waiting for Claude"));
+  for (const g of ghosts) {
+    const note = el("span", "ghost-note");
+    note.dataset.sentAt = String(g.sentAt);
+    chat.append(el("div", "you ghost", g.text), note);
+  }
+  renderGhostNotes();
   if (nearBottom) window.scrollTo(0, document.body.scrollHeight);
+  renderJumps();
 }
+
+// ---- Jumping to Claude's last response, and to the end ---------------------------
+
+/** Within this of the bottom counts as at the end. */
+const AT_END_PX = 24;
+
+const lastReply = () => [...document.querySelectorAll(".chat .claude")].at(-1) ?? null;
+const atEnd = () => window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - AT_END_PX;
+
+/** ↑ once you're below the start of Claude's last response; ↓ until you're at the end. */
+function renderJumps() {
+  const inChat = !!state.openId && !$(".screen-chat").hidden;
+  const reply = inChat ? lastReply() : null;
+  const headerBottom = $(".top").getBoundingClientRect().bottom;
+  $(".jump-reply").hidden = !reply || reply.getBoundingClientRect().top >= headerBottom;
+  $(".jump-end").hidden = !inChat || atEnd();
+}
+
+$(".jump-reply").addEventListener("click", () => {
+  const reply = lastReply();
+  if (!reply) return;
+  const top = reply.getBoundingClientRect().top + window.scrollY - $(".top").offsetHeight - 8;
+  window.scrollTo({ top, behavior: "smooth" });
+});
+$(".jump-end").addEventListener("click", () => {
+  window.scrollTo({ top: document.documentElement.scrollHeight, behavior: "smooth" });
+});
+window.addEventListener("scroll", renderJumps, { passive: true });
+window.addEventListener("resize", renderJumps);
 
 // ---- Composer: the prompt card and the prompt box ---------------------------
 
@@ -279,14 +336,119 @@ $(".prompt-form").addEventListener("submit", e => {
     return;
   }
   input.value = "";
+  fitInput();
+  noteActivity();
   const ghosts = state.ghosts.get(state.openId) ?? [];
-  const seen = promptCount(state.entries, text) + ghosts.filter(g => promptKey(g.text) === promptKey(text)).length;
+  const seen = promptCount(state.entries, text) + ghosts.filter(g => isPrompt(g.text, text)).length;
   ghosts.push({ text, seen, sentAt: Date.now() });
   state.ghosts.set(state.openId, ghosts);
   renderChat(state.entries);
 });
 
 $(".back").addEventListener("click", closeSession);
+
+/** The box grows with what's typed, up to its CSS max-height, then scrolls. */
+function fitInput() {
+  const input = $(".prompt-input");
+  // Hidden, it has no height to measure: leave it to its rows until it shows.
+  if (!input.offsetParent) {
+    input.style.height = "";
+    return;
+  }
+  input.style.height = "auto";
+  const border = input.offsetHeight - input.clientHeight;
+  input.style.height = `${input.scrollHeight + border}px`;
+  renderJumps();
+}
+
+$(".prompt-input").addEventListener("input", () => {
+  fitInput();
+  noteActivity();
+});
+
+// ---- How long since Claude's last reply ---------------------------------------
+
+/** Shown once neither a reply nor your typing has happened for this long. */
+const QUIET_MS = 10_000;
+
+function ago(ms) {
+  const s = Math.floor(ms / 1000);
+  if (s < 1) return "just now";
+  if (s === 1) return "1 second ago";
+  if (s < 60) return `${s} seconds ago`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return m === 1 ? "1 minute ago" : `${m} minutes ago`;
+  const h = Math.floor(m / 60);
+  return h === 1 ? "over an hour ago" : `over ${h} hours ago`;
+}
+
+function renderSince() {
+  const since = $(".since");
+  const now = Date.now();
+  const show = !!state.openId && state.lastResponseAt !== null
+    && now - state.lastActiveAt >= QUIET_MS && now - state.lastResponseAt >= QUIET_MS;
+  since.hidden = !show;
+  if (show) since.textContent = `Last response from Claude ${ago(now - state.lastResponseAt)}`;
+}
+
+function noteActivity() {
+  state.lastActiveAt = Date.now();
+  renderSince();
+}
+
+/** What Claude has said so far, to tell a new reply from a refresh of the same one. */
+const replyKey = entries => {
+  const items = entries.flatMap(t => t.items ?? []);
+  return `${items.length}:${JSON.stringify(items.at(-1) ?? null)}`;
+};
+
+/** A conversation for the open session: a changed reply restarts the clock. */
+function noteConversation(entries, mtimeMs) {
+  const key = replyKey(entries);
+  if (key === state.responseKey) return;
+  const now = Date.now();
+  const first = state.responseKey === null;
+  state.responseKey = key;
+  // The first one is what was there already: dated by the transcript's last write.
+  state.lastResponseAt = first && typeof mtimeMs === "number" ? Math.min(now, mtimeMs) : now;
+  if (!first) state.lastActiveAt = now;
+  renderSince();
+}
+
+/** Each pending prompt's note counts up from when it was sent. */
+function renderGhostNotes() {
+  const now = Date.now();
+  for (const note of document.querySelectorAll(".ghost-note")) {
+    note.textContent = `Sent ${ago(now - Number(note.dataset.sentAt))}, waiting for Claude`;
+  }
+}
+
+setInterval(() => {
+  renderSince();
+  renderGhostNotes();
+}, 1000);
+
+// ---- Text size -----------------------------------------------------------------
+
+const SIZE_KEY = "cmx-companion-text-size";
+const SIZES = [0.5, 0.6, 0.7, 0.8, 0.9, 1, 1.1, 1.2, 1.3];
+
+function setTextSize(size, save = true) {
+  state.textSize = size;
+  document.documentElement.style.fontSize = `${16 * size}px`;
+  $(".size-value").textContent = `${Math.round(size * 100)}%`;
+  $(".size-down").disabled = size <= SIZES[0];
+  $(".size-up").disabled = size >= SIZES.at(-1);
+  if (save) try { localStorage.setItem(SIZE_KEY, String(size)); } catch { /* private mode */ }
+  fitInput();
+}
+
+const stepSize = by => {
+  const i = SIZES.indexOf(state.textSize);
+  setTextSize(SIZES[Math.max(0, Math.min(SIZES.length - 1, (i < 0 ? SIZES.indexOf(1) : i) + by))]);
+};
+$(".size-down").addEventListener("click", () => stepSize(-1));
+$(".size-up").addEventListener("click", () => stepSize(1));
 
 $(".resume").addEventListener("click", () => {
   if (!connection.send({ type: "resumeSession", sessionId: state.openId })) {
@@ -342,7 +504,21 @@ function dropRefusedGhost() {
   ghosts.pop();
   if (!ghosts.length) state.ghosts.delete(state.openId);
   $(".prompt-input").value ||= last.text;
+  fitInput();
   renderChat(state.entries);
+}
+
+// ---- Today's spend ---------------------------------------------------------------
+
+/** "42% of $12.40 today": today's spend against today's budget share, or nothing without one. */
+function renderUsage(u) {
+  const box = $(".usage");
+  const ok = u && Number.isFinite(u.percent) && Number.isFinite(u.dailyUsd);
+  box.hidden = !ok;
+  if (!ok) return;
+  box.textContent = `${Math.round(u.percent)}% of $${u.dailyUsd.toFixed(2)} today`;
+  box.dataset.level = ["warn", "alert"].includes(u.level) ? u.level : "ok";
+  box.title = "Today's spend, as a share of today's budget";
 }
 
 // ---- Messages from the app --------------------------------------------------
@@ -361,12 +537,16 @@ function onMessage(m) {
       break;
     case "conversation":
       if (Array.isArray(m.entries)) settleGhosts(m.sessionId, m.entries);
+      if (m.sessionId === state.openId && Array.isArray(m.entries)) noteConversation(m.entries, m.mtimeMs);
       if (m.sessionId === state.openId && Array.isArray(m.entries)) renderChat(m.entries);
       break;
     case "prompt":
       if (m.card) state.cards.set(m.sessionId, m.card);
       else state.cards.delete(m.sessionId);
       if (m.sessionId === state.openId) renderComposer();
+      break;
+    case "usage":
+      renderUsage(m.usage);
       break;
     case "error":
       dropRefusedGhost();
@@ -390,11 +570,9 @@ function logLine(text) {
   $(".diagnostics-log").textContent = logLines.join("\n");
 }
 
-/** Shown until connected; after that only from the menu. */
-function renderDiagnostics() {
-  $(".diagnostics").hidden = state.status === "connected" && !state.showDetails;
-  $(".menu-details").textContent = state.showDetails ? "Hide connection details" : "Connection details";
+function renderMenu() {
   $(".menu-sessions").hidden = state.status !== "connected";
+  $(".menu-disconnect").hidden = state.status === "ended" || state.status === "unpaired";
 }
 
 function setMenu(open) {
@@ -414,15 +592,45 @@ $(".menu-sessions").addEventListener("click", () => {
   if (state.openId) closeSession();
   else showScreen("list");
 });
-$(".menu-details").addEventListener("click", () => {
+/** The log, over the page, scrolled to its newest line. */
+function showDetails() {
   setMenu(false);
-  state.showDetails = !state.showDetails;
-  renderDiagnostics();
-  if (state.showDetails) {
-    $(".diagnostics").open = true;
-    $(".diagnostics").scrollIntoView({ block: "start" });
-  }
+  $(".diagnostics").showModal();
+  const log = $(".diagnostics-log");
+  log.scrollTop = log.scrollHeight;
+}
+
+$(".menu-details").addEventListener("click", showDetails);
+$(".trouble-details").addEventListener("click", showDetails);
+$(".diagnostics-close").addEventListener("click", () => $(".diagnostics").close());
+// A tap on the backdrop lands on the dialog itself, outside its content.
+$(".diagnostics").addEventListener("click", e => { if (e.target === e.currentTarget) e.currentTarget.close(); });
+
+$(".menu-disconnect").addEventListener("click", () => {
+  setMenu(false);
+  connection.disconnect();
 });
+
+/** How long the disconnected page stays before it closes itself. */
+const CLOSE_AFTER_S = 5;
+
+/** Counts down, then closes the page; a browser that won't let it says so instead. */
+function closeSoon() {
+  const note = $(".left-closing");
+  let left = CLOSE_AFTER_S;
+  const tick = () => {
+    if (left > 0) {
+      note.textContent = `This page will close in ${left} second${left === 1 ? "" : "s"}.`;
+      left -= 1;
+      setTimeout(tick, 1000);
+      return;
+    }
+    window.close();
+    // Still here: the browser keeps pages it didn't open from a script.
+    setTimeout(() => { note.textContent = "You can close this page now."; }, 500);
+  };
+  tick();
+}
 
 $(".diagnostics-copy").addEventListener("click", () => {
   const text = [navigator.userAgent, ...logLines].join("\n");
@@ -436,7 +644,7 @@ const connection = new Connection({
     s.textContent = STATUS_TEXT[status];
     s.dataset.status = status;
     state.status = status;
-    renderDiagnostics();
+    renderMenu();
     if (status === "unpaired") showScreen("unpaired");
     if (status === "connected" || status === "ended") $(".trouble").hidden = true;
     if (status === "connected") {
@@ -447,8 +655,15 @@ const connection = new Connection({
   onMessage,
   onTrouble() { $(".trouble").hidden = false; },
   onEnded(reason) {
-    $(".ended-text").textContent = ENDED_TEXT[reason] ?? ENDED_TEXT.disconnected;
     state.openId = null;
+    renderSince();
+    renderUsage(null);
+    if (reason === "left") {
+      showScreen("left");
+      closeSoon();
+      return;
+    }
+    $(".ended-text").textContent = ENDED_TEXT[reason] ?? ENDED_TEXT.disconnected;
     showScreen("ended");
   },
 });
@@ -456,6 +671,47 @@ const connection = new Connection({
 let savedWake = null;
 try { savedWake = localStorage.getItem(WAKE_KEY); } catch { /* private mode */ }
 if (savedWake === "1" && "wakeLock" in navigator) setKeepAwake(true);
+
+let savedSize = null;
+try { savedSize = Number(localStorage.getItem(SIZE_KEY)); } catch { /* private mode */ }
+setTextSize(SIZES.includes(savedSize) ? savedSize : 1, false);
+
+// ---- A newer version of this page -------------------------------------------------
+
+/** How often to look for a newer deploy while the page is open. */
+const UPDATE_CHECK_MS = 5 * 60_000;
+/** Everything the page loads from its own site, fetched afresh before reloading. */
+const PAGE_FILES = ["index.html", "app.js", "connection.js", "format.js", "style.css", "version.js"];
+
+/** The deployed version, read past the browser's cache; null if it can't be read. */
+async function deployedVersion() {
+  try {
+    const res = await fetch("version.js", { cache: "no-store" });
+    if (!res.ok) return null;
+    return /version:\s*['"]([^'"]+)['"]/.exec(await res.text())?.[1] ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function checkForUpdate() {
+  const latest = await deployedVersion();
+  const newer = !!latest && latest !== BUILD_INFO.version;
+  $(".menu-update").hidden = !newer;
+  if (newer) $(".menu-button").dataset.update = "1";
+  else delete $(".menu-button").dataset.update;
+}
+
+$(".menu-update").addEventListener("click", async () => {
+  setMenu(false);
+  $(".menu-update").disabled = true;
+  // GitHub Pages lets browsers keep files for a while: refresh them, or the reload is the old page.
+  await Promise.all(PAGE_FILES.map(f => fetch(f, { cache: "reload" }).catch(() => {})));
+  location.reload();
+});
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") checkForUpdate(); });
+setInterval(checkForUpdate, UPDATE_CHECK_MS);
+checkForUpdate();
 
 $(".version").textContent = BUILD_INFO.date ? `${BUILD_INFO.version} · ${BUILD_INFO.date}` : BUILD_INFO.version;
 connection.start();

@@ -74,16 +74,16 @@ test("ends the pairing when the app has gone", async ({ context }) => {
   await expect(phone.locator(".ended-text")).toContainText("scan the code");
 });
 
-test("logs each connection step under Connection details, ready to copy", async ({ context }) => {
+test("logs each connection step in Connection details, opened over the page from the menu", async ({ context }) => {
   const id = deskId();
   await openDesk(context, id);
   const phone = await openPhone(context, id);
   await expect(phone.locator(".status")).toHaveText("Connected");
-  // Once connected the details are tucked away, behind the menu.
   await expect(phone.locator(".diagnostics")).toBeHidden();
   await phone.locator(".menu-button").click();
   await phone.locator(".menu-details").click();
   await expect(phone.locator(".diagnostics")).toBeVisible();
+  expect(await phone.locator(".diagnostics").evaluate(d => d.matches(":modal"))).toBe(true);
   const log = phone.locator(".diagnostics-log");
   await expect(log).toContainText("Pairing server: connected");
   await expect(log).toContainText("Direct connection: open");
@@ -91,6 +91,8 @@ test("logs each connection step under Connection details, ready to copy", async 
   await expect(log).toContainText("local candidate: host");
   await expect(log).toContainText("remote candidate received: host");
   await expect(phone.locator(".diagnostics-copy")).toBeVisible();
+  await phone.locator(".diagnostics-close").click();
+  await expect(phone.locator(".diagnostics")).toBeHidden();
 });
 
 test("asks for a scan when it was never paired", async ({ page }) => {
@@ -103,15 +105,17 @@ test("suggests mobile data or another Wi-Fi when the connection stalls, and hide
   const stalled = await openDesk(context, id, { stall: true });
   const phone = await openPhone(context, id);
   await expect(phone.locator(".trouble")).toBeHidden();
-  await expect(phone.locator(".diagnostics")).toBeVisible();
   await expect(phone.locator(".trouble")).toBeVisible({ timeout: 30_000 });
   await expect(phone.locator(".trouble")).toContainText("mobile data");
   await expect(phone.locator(".trouble")).toContainText("different Wi-Fi");
+  // The hint opens the details, to see where it's stuck.
+  await phone.locator(".trouble-details").click();
+  await expect(phone.locator(".diagnostics-log")).toContainText("No direct connection");
+  await phone.locator(".diagnostics-close").click();
   // The app comes back reachable: the phone's retry connects and the hint goes.
   await stalled.evaluate(() => window.desk.destroy());
   await stalled.close();
   await openDesk(context, id);
   await expect(phone.locator(".status")).toHaveText("Connected", { timeout: 30_000 });
   await expect(phone.locator(".trouble")).toBeHidden();
-  await expect(phone.locator(".diagnostics")).toBeHidden();
 });

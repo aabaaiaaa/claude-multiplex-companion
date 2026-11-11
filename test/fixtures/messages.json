@@ -4,6 +4,7 @@
     { "v": 1, "type": "listSessions" },
     { "v": 1, "type": "openSession", "sessionId": "session-1" },
     { "v": 1, "type": "closeSession" },
+    { "v": 1, "type": "disconnect" },
     { "v": 1, "type": "resumeSession", "sessionId": "session-2" },
     { "v": 1, "type": "sendPrompt", "sessionId": "session-1", "text": "Add a test for the parser" },
     { "v": 1, "type": "answer", "sessionId": "session-1", "cardId": "card-1", "choice": { "kind": "option", "index": 0 } },
@@ -36,6 +37,7 @@
     } },
     { "v": 1, "type": "prompt", "sessionId": "session-1", "card": null },
     { "v": 1, "type": "error", "message": "That prompt was already answered" },
-    { "v": 1, "type": "goodbye", "reason": "replaced" }
+    { "v": 1, "type": "goodbye", "reason": "replaced" },
+    { "v": 1, "type": "usage", "usage": { "percent": 42, "dailyUsd": 12.4, "level": "ok" } }
   ]
 }

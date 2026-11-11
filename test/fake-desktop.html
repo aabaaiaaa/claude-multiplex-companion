@@ -38,6 +38,10 @@
         c.send({ v: 1, type: "welcome", deviceId: m.clientId });
         c.send({ v: 1, type: "sessions", sessions: desk.sessions });
       }
+      if (m.type === "disconnect") {
+        c.send({ v: 1, type: "goodbye", reason: "disconnected" });
+        c.close();
+      }
       if (m.type === "openSession") {
         const convo = example("conversation");
         c.send({ ...convo, sessionId: m.sessionId });

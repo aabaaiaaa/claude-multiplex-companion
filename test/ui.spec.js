@@ -180,7 +180,7 @@ test("shows a sent prompt as pending until the transcript has it", async ({ cont
   await phone.locator(".send").click();
   const ghost = phone.locator(".chat .you.ghost");
   await expect(ghost).toHaveText("Run the tests");
-  await expect(phone.locator(".ghost-note")).toHaveText("Sent, waiting for Claude");
+  await expect(phone.locator(".ghost-note")).toHaveText(/^Sent (just now|\d+ seconds? ago), waiting for Claude$/);
   // A refresh without the new prompt keeps it pending, even though the same words are there from before.
   await conversation(desk, ["Run the tests"]);
   await expect(ghost).toHaveCount(1);
@@ -275,4 +275,214 @@ test("keeps the screen on from the menu, and remembers it", async ({ context }) 
   await expect(toggle).toHaveAttribute("aria-checked", "true");
   await toggle.click();
   await expect.poll(() => phone.evaluate(() => window.wakeCalls)).toEqual(["screen", "release"]);
+});
+
+test("disconnects from the menu, forgets the pairing, and closes itself", async ({ context }) => {
+  await context.addInitScript(() => { window.close = () => { window.closeCalls = (window.closeCalls ?? 0) + 1; }; });
+  const { desk, phone } = await paired(context);
+  await phone.locator(".menu-button").click();
+  await phone.locator(".menu-disconnect").click();
+  await expect.poll(() => lastOfType(desk, "disconnect")).toBeDefined();
+  await expect(phone.locator(".screen-left")).toBeVisible();
+  await expect(phone.locator(".screen-left")).toContainText("scan the code");
+  await expect(phone.locator(".left-closing")).toContainText(/close in \d seconds?/);
+  await expect.poll(() => phone.evaluate(() => window.closeCalls), { timeout: 8000 }).toBe(1);
+  await expect(phone.locator(".left-closing")).toHaveText("You can close this page now.");
+  // Opened again without the code's link, it asks for a scan rather than looking for the app.
+  await phone.goto("/index.html");
+  await expect(phone.locator(".screen-unpaired")).toBeVisible();
+});
+
+test("shows Claude's bold, code and code blocks, and nothing else as markup", async ({ context }) => {
+  const { desk, phone } = await paired(context, LIVE);
+  await openFirst(phone, desk);
+  await desk.evaluate(text => window.desk.send({ type: "conversation", sessionId: "session-1", mtimeMs: Date.now(),
+    entries: [{ kind: "turn", prompt: "Check it", items: [{ kind: "text", text }] }] }),
+  "Run **npm test** then `git status`, not <b>this</b>.\n```sh\nnpm ci\nnpm test\n```\nDone.");
+  const reply = phone.locator(".chat .claude").first();
+  await expect(reply.locator("strong")).toHaveText("npm test");
+  await expect(reply.locator(":scope > code")).toHaveText("git status");
+  await expect(reply.locator("pre.code-block")).toHaveText("npm ci\nnpm test");
+  await expect(reply).toContainText("not <b>this</b>.");
+  await expect(reply.locator("b")).toHaveCount(0);
+});
+
+test("makes the text smaller or larger from the menu, and remembers it", async ({ context }) => {
+  const { phone } = await paired(context);
+  const fontSize = () => phone.evaluate(() => getComputedStyle(document.documentElement).fontSize);
+  await phone.locator(".menu-button").click();
+  await phone.locator(".size-down").click();
+  await phone.locator(".size-down").click();
+  await expect(phone.locator(".menu")).toBeVisible();
+  await expect(phone.locator(".size-value")).toHaveText("80%");
+  expect(await fontSize()).toBe("12.8px");
+  await phone.reload();
+  await expect(phone.locator(".status")).toHaveText("Connected");
+  expect(await fontSize()).toBe("12.8px");
+  await phone.locator(".menu-button").click();
+  for (let i = 0; i < 6; i++) await phone.locator(".size-down").click({ force: true });
+  await expect(phone.locator(".size-value")).toHaveText("50%");
+  await expect(phone.locator(".size-down")).toBeDisabled();
+});
+
+test("grows the prompt box as you type, up to a limit", async ({ context }) => {
+  const { desk, phone } = await paired(context, LIVE);
+  await openFirst(phone, desk);
+  const input = phone.locator(".prompt-input");
+  const height = async () => (await input.boundingBox()).height;
+  const start = await height();
+  await input.fill(Array.from({ length: 6 }, (_, n) => `line ${n}`).join("\n"));
+  const grown = await height();
+  expect(grown).toBeGreaterThan(start * 1.5);
+  await input.fill(Array.from({ length: 80 }, (_, n) => `line ${n}`).join("\n"));
+  expect(await height()).toBeLessThanOrEqual(phone.viewportSize().height * 0.4 + 1);
+  await phone.locator(".send").click();
+  await expect.poll(height).toBeLessThan(start + 1);
+});
+
+test("says how long since Claude's last reply once things go quiet", async ({ context }) => {
+  const id = deskId();
+  const desk = await openDesk(context, id);
+  await desk.evaluate(s => { window.desk.sessions = s; }, LIVE);
+  const phone = await context.newPage();
+  await phone.clock.install();
+  await phone.goto(`/index.html#peer=${id}&server=localhost:9123`);
+  await expect(phone.locator(".status")).toHaveText("Connected");
+  await openFirst(phone, desk);
+  const since = phone.locator(".since");
+  const reply = text => desk.evaluate(t => window.desk.send({ type: "conversation", sessionId: "session-1", mtimeMs: Date.now(),
+    entries: [{ kind: "turn", prompt: "Go", items: [{ kind: "text", text: t }] }] }), text);
+  await reply("First.");
+  await expect(phone.locator(".chat .claude")).toHaveText("First.");
+  await expect(since).toBeHidden();
+  await phone.clock.fastForward(11_000);
+  await expect(since).toBeVisible();
+  await expect(since).toContainText("Last response from Claude");
+  await expect(since).toContainText("seconds ago");
+  // Typing hides it, until 10 seconds pass without any.
+  await phone.locator(".prompt-input").pressSequentially("Next");
+  await expect(since).toBeHidden();
+  await phone.clock.fastForward(5_000);
+  await expect(since).toBeHidden();
+  await phone.clock.fastForward(6_000);
+  await expect(since).toBeVisible();
+  // Sending hides it, and so does a new reply.
+  await phone.locator(".send").click();
+  await expect(since).toBeHidden();
+  await phone.clock.fastForward(11_000);
+  await expect(since).toBeVisible();
+  await reply("Second.");
+  await expect(since).toBeHidden();
+});
+
+test("clears a pending prompt stored differently, and any sent before one that's arrived", async ({ context }) => {
+  const { desk, phone } = await paired(context, LIVE);
+  await openFirst(phone, desk);
+  await conversation(desk, []);
+  const long = "Can you make the box taller?\nIt should show more than three lines of text at once.";
+  for (const text of [long, "First short one", "Second short one"]) {
+    await phone.locator(".prompt-input").fill(text);
+    await phone.locator(".send").click();
+  }
+  const ghost = phone.locator(".chat .you.ghost");
+  await expect(ghost).toHaveCount(3);
+  // The paste comes back with more around it: it still counts as arrived.
+  await conversation(desk, [`[Pasted text]\n${long}\n[end]`]);
+  await expect(ghost).toHaveCount(2);
+  // The second never shows as sent, but the third does: both have arrived.
+  await conversation(desk, [long, "First short one, as typed in the app", "Second short one"]);
+  await expect(ghost).toHaveCount(0);
+});
+
+test("counts up how long ago a pending prompt was sent", async ({ context }) => {
+  const id = deskId();
+  const desk = await openDesk(context, id);
+  await desk.evaluate(s => { window.desk.sessions = s; }, LIVE);
+  const phone = await context.newPage();
+  await phone.clock.install();
+  await phone.goto(`/index.html#peer=${id}&server=localhost:9123`);
+  await expect(phone.locator(".status")).toHaveText("Connected");
+  await openFirst(phone, desk);
+  await phone.locator(".prompt-input").fill("Run the tests");
+  await phone.locator(".send").click();
+  const note = phone.locator(".ghost-note");
+  await expect(note).toHaveText("Sent just now, waiting for Claude");
+  await phone.clock.fastForward(12_000);
+  await expect(note).toHaveText(/^Sent 1[23] seconds ago, waiting for Claude$/);
+  await phone.clock.fastForward(60_000);
+  await expect(note).toHaveText("Sent 1 minute ago, waiting for Claude");
+});
+
+test("shows today's spend against today's budget in the middle of the top bar", async ({ context }) => {
+  const { desk, phone } = await paired(context);
+  const usage = phone.locator(".top .usage");
+  await expect(usage).toBeHidden();
+  await desk.evaluate(() => window.desk.send({ type: "usage", usage: { percent: 42, dailyUsd: 12.4, level: "ok" } }));
+  await expect(usage).toHaveText("42% of $12.40 today");
+  const bar = await phone.locator(".top").boundingBox();
+  const box = await usage.boundingBox();
+  expect(Math.abs(box.x + box.width / 2 - (bar.x + bar.width / 2))).toBeLessThan(4);
+  await desk.evaluate(() => window.desk.send({ type: "usage", usage: { percent: 120, dailyUsd: 12.4, level: "alert" } }));
+  await expect(usage).toHaveText("120% of $12.40 today");
+  await expect(usage).toHaveAttribute("data-level", "alert");
+  // No budget set in the app: nothing to show.
+  await desk.evaluate(() => window.desk.send({ type: "usage", usage: null }));
+  await expect(usage).toBeHidden();
+});
+
+test("offers a newer version from the menu, and loads it", async ({ context }) => {
+  const { phone } = await paired(context);
+  await phone.locator(".menu-button").click();
+  await expect(phone.locator(".menu-update")).toBeHidden();
+  await phone.locator(".menu-button").click();
+  // A deploy lands: the next check, here on coming back to the page, sees it.
+  const deployed = "abc1234";
+  await phone.route(/\/version\.js/, route => route.fulfill({
+    contentType: "application/javascript",
+    body: `export const BUILD_INFO = { version: '${deployed}', date: '2026-11-11 10:00:00' };`,
+  }));
+  await phone.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+  await expect(phone.locator(".menu-button")).toHaveAttribute("data-update", "1");
+  await phone.locator(".menu-button").click();
+  const update = phone.locator(".menu-update");
+  await expect(update).toHaveText("New version available: tap to update");
+  const reloaded = phone.waitForEvent("load");
+  await update.click();
+  await reloaded;
+  // The new page is that version, and reconnects on its own.
+  await expect(phone.locator(".version")).toContainText("abc1234");
+  await expect(phone.locator(".status")).toHaveText("Connected");
+  await expect(phone.locator(".menu-button")).not.toHaveAttribute("data-update", "1");
+});
+
+test("jumps up to Claude's last response, and down to the end", async ({ context }) => {
+  const { desk, phone } = await paired(context, LIVE);
+  await openFirst(phone, desk);
+  const long = Array.from({ length: 80 }, (_, n) => `Line ${n} of the last response.`).join("\n");
+  await desk.evaluate(last => window.desk.send({ type: "conversation", sessionId: "session-1", mtimeMs: Date.now(),
+    entries: [
+      ...Array.from({ length: 20 }, (_, n) => ({ kind: "turn", prompt: `Prompt ${n}`, items: [{ kind: "text", text: "Done." }] })),
+      { kind: "turn", prompt: "Explain it", items: [{ kind: "text", text: last }] },
+    ] }), long);
+  const up = phone.locator(".jump-reply");
+  const down = phone.locator(".jump-end");
+  const replyTop = () => phone.locator(".chat .claude").last().evaluate(e => e.getBoundingClientRect().top);
+  const headerBottom = () => phone.locator(".top").evaluate(e => e.getBoundingClientRect().bottom);
+
+  // Up at the top, above the last response: only the way down shows.
+  await phone.evaluate(() => window.scrollTo(0, 0));
+  await expect(down).toBeVisible();
+  await expect(up).toBeHidden();
+  await down.click();
+  await expect(down).toBeHidden();
+  // At the end, the start of that long response is off the top: the way up shows.
+  await expect(up).toBeVisible();
+  const footer = await phone.locator(".bottom").boundingBox();
+  const box = await up.boundingBox();
+  expect(box.y + box.height).toBeLessThanOrEqual(footer.y);
+  expect(box.x).toBeGreaterThan(phone.viewportSize().width / 2);
+  await up.click();
+  await expect.poll(async () => Math.abs((await replyTop()) - (await headerBottom()))).toBeLessThan(20);
+  await expect(up).toBeHidden();
+  await expect(down).toBeVisible();
 });

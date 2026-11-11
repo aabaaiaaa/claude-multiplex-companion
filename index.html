@@ -11,20 +11,34 @@
 </head>
 <body>
   <header class="top">
-    <button type="button" class="back" hidden aria-label="Back to sessions">‹</button>
-    <h1 class="title">Sessions</h1>
+    <div class="top-left">
+      <button type="button" class="back" hidden aria-label="Back to sessions">‹</button>
+      <h1 class="title">Sessions</h1>
+    </div>
+    <span class="usage" hidden></span>
+    <div class="top-right">
     <span class="status" data-status="connecting">Connecting…</span>
     <button type="button" class="menu-button" aria-label="Menu" aria-haspopup="true" aria-expanded="false">☰</button>
     <nav class="menu" hidden>
+      <button type="button" class="menu-update" hidden>New version available: tap to update</button>
       <button type="button" class="menu-sessions">Sessions</button>
       <button type="button" class="menu-wake" role="menuitemcheckbox" aria-checked="false">Keep screen on</button>
+      <div class="menu-size" role="group" aria-label="Text size">
+        <span>Text size</span>
+        <button type="button" class="size-down" aria-label="Smaller text">A−</button>
+        <output class="size-value">100%</output>
+        <button type="button" class="size-up" aria-label="Larger text">A+</button>
+      </div>
       <button type="button" class="menu-details">Connection details</button>
+      <button type="button" class="menu-disconnect">Disconnect</button>
     </nav>
+    </div>
   </header>
 
   <main>
     <p class="trouble" role="status" hidden>Having trouble connecting? If this phone is on the same Wi-Fi as your
-      computer, try mobile data or a different Wi-Fi network: some networks stop devices on them reaching each other.</p>
+      computer, try mobile data or a different Wi-Fi network: some networks stop devices on them reaching each other.
+      <button type="button" class="trouble-details">Show connection details</button></p>
 
     <section class="screen screen-unpaired" hidden>
       <p>On your computer, press the <strong>phone button (📱)</strong> in claude-multiplex's top bar,
@@ -35,6 +49,13 @@
       <p class="ended-text">Pairing ended. To connect again, scan the code in claude-multiplex.</p>
     </section>
 
+    <section class="screen screen-left" hidden>
+      <p class="left-title">Disconnected</p>
+      <p>To connect again, scan the code in claude-multiplex on your computer: press the phone button (📱)
+        in its top bar, then <strong>Pair a phone</strong>.</p>
+      <p class="left-closing" role="status"></p>
+    </section>
+
     <section class="screen screen-list" hidden>
       <ul class="session-list"></ul>
       <p class="empty" hidden>No sessions are open in the app.</p>
@@ -42,20 +63,29 @@
 
     <section class="screen screen-chat" hidden>
       <div class="chat"></div>
+      <p class="since" role="status" hidden></p>
     </section>
 
-    <details class="diagnostics">
-      <summary>Connection details</summary>
-      <button type="button" class="diagnostics-copy">Copy</button>
-      <pre class="diagnostics-log"></pre>
-    </details>
   </main>
 
+  <dialog class="diagnostics" aria-labelledby="diagnostics-title">
+    <div class="dialog-head">
+      <h2 id="diagnostics-title">Connection details</h2>
+      <button type="button" class="diagnostics-copy">Copy</button>
+      <button type="button" class="diagnostics-close" aria-label="Close">✕</button>
+    </div>
+    <pre class="diagnostics-log"></pre>
+  </dialog>
+
   <footer class="bottom">
+    <div class="jumps">
+      <button type="button" class="jump-reply" aria-label="Scroll to Claude's last response" hidden>↑</button>
+      <button type="button" class="jump-end" aria-label="Scroll to the end" hidden>↓</button>
+    </div>
     <div class="composer" hidden>
       <div class="card" hidden></div>
       <form class="prompt-form">
-        <textarea class="prompt-input" rows="2" placeholder="Message Claude…"></textarea>
+        <textarea class="prompt-input" rows="3" placeholder="Message Claude…"></textarea>
         <button type="submit" class="send">Send</button>
       </form>
       <p class="prompt-reason" hidden></p>

@@ -9,8 +9,14 @@ straight to the app. From the page you can:
 - answer Claude's permission prompts and questions;
 - start a session that isn't running.
 
-The menu (☰) goes back to the sessions, keeps the screen on while the page is open, and shows
-the connection details.
+The top bar shows today's spend as a share of today's budget. Arrows above the prompt box jump
+to the start of Claude's last response and to the end of the chat.
+
+The menu (☰) goes back to the sessions, keeps the screen on while the page is open, sets the
+text size, shows the connection details, disconnects, and offers a newer version of this page
+once one is deployed. Claude's `code`, code blocks and
+**bold** show formatted. The prompt box grows as you type. Once nothing has happened for 10
+seconds, the chat says how long ago Claude last replied.
 
 It's a prototype: the connection is a direct, encrypted WebRTC link, but pairing has no other
 security yet.
@@ -22,11 +28,14 @@ security yet.
   STUN gets it through home routers and mobile data. There's no working relay, so a phone on
   the same Wi-Fi as the computer may not connect: after a stalled attempt the page suggests
   mobile data or another Wi-Fi network.
-- **Connection details,** at the bottom of the page, log each step with a Copy button: states and
+- **Connection details,** from the menu or the hint after a stalled attempt, open over the page and
+  log each step, with a Copy button: states and
   the kinds of address each side offered, never the addresses.
 - **While the app keeps the pairing open,** the page reconnects by itself after the phone locks
   or the browser goes to the background, with no new scan.
 - **Disconnect in the app, or closing it,** ends the pairing.
+- **Disconnect on the page** ends it too, and the page closes itself after 5 seconds. To connect
+  again, scan a new code from the app: the page doesn't look for the app by itself.
 
 See [PROTOCOL.md](PROTOCOL.md) for the messages.
 

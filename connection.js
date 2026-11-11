@@ -14,6 +14,9 @@ const ICE_GAVE_UP = ["disconnected", "failed"];
 /** Wait this long before each retry; the last value repeats. */
 const RETRY_MS = [1000, 2000, 5000, 10000];
 
+/** How long a disconnect waits for the app's goodbye before letting go anyway. */
+const LEAVE_WAIT_MS = 1500;
+
 /** STUN plus the free openrelay TURN servers, for phones on another network. */
 const CLOUD_ICE_SERVERS = [
   { urls: "stun:stun.l.google.com:19302" },
@@ -61,7 +64,7 @@ function peerOptions(server) {
 
 /**
  * Statuses: "unpaired", "connecting", "connected", "reconnecting", "ended".
- * `onEnded(reason)` gets "disconnected", "replaced" or "unavailable".
+ * `onEnded(reason)` gets "left" (disconnected from this page), "disconnected", "replaced" or "unavailable".
  * `onTrouble()` runs when a direct connection didn't open in time.
  */
 export class Connection {
@@ -135,7 +138,7 @@ export class Connection {
       });
       conn.on("data", m => {
         if (conn !== this.conn || !m || m.v !== 1) return;
-        if (m.type === "goodbye") this.end(m.reason === "replaced" ? "replaced" : "disconnected");
+        if (m.type === "goodbye") this.end(this.leaving ? "left" : m.reason === "replaced" ? "replaced" : "disconnected");
         else this.onMessage(m);
       });
       conn.on("close", () => { if (conn === this.conn) { this.log("Direct connection: closed"); this.scheduleRetry(); } });
@@ -208,7 +211,7 @@ export class Connection {
   }
 
   scheduleRetry() {
-    if (this.status === "ended" || this.timer) return;
+    if (this.status === "ended" || this.leaving || this.timer) return;
     this.conn = null;
     this.setStatus("reconnecting");
     const delay = RETRY_MS[Math.min(this.attempt, RETRY_MS.length - 1)];
@@ -236,6 +239,18 @@ export class Connection {
     if (!this.conn?.open) return false;
     this.conn.send({ v: 1, ...message });
     return true;
+  }
+
+  /** Ends the pairing from this page: the app stops waiting for it, and this page forgets it. */
+  disconnect() {
+    if (this.status === "ended" || this.leaving) return;
+    this.leaving = true;
+    if (!this.send({ type: "disconnect" })) {
+      this.end("left");
+      return;
+    }
+    // Let the message go before the connection does; the app's goodbye ends it sooner.
+    setTimeout(() => this.end("left"), LEAVE_WAIT_MS);
   }
 
   end(reason) {
