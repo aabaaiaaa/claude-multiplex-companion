@@ -167,3 +167,70 @@ test("fits a phone screen without sideways scrolling", async ({ context }) => {
   const overflow = await phone.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   expect(overflow).toBeLessThanOrEqual(0);
 });
+
+const conversation = (desk, prompts) => desk.evaluate(p => window.desk.send({ type: "conversation", sessionId: "session-1", mtimeMs: Date.now(),
+  entries: p.map(prompt => ({ kind: "turn", prompt, items: [{ kind: "text", text: "Done." }] })) }), prompts);
+
+test("shows a sent prompt as pending until the transcript has it", async ({ context }) => {
+  const { desk, phone } = await paired(context, LIVE);
+  await openFirst(phone, desk);
+  await conversation(desk, ["Run the tests"]);
+  await expect(phone.locator(".chat .you:not(.ghost)")).toHaveCount(1);
+  await phone.locator(".prompt-input").fill("Run the tests");
+  await phone.locator(".send").click();
+  const ghost = phone.locator(".chat .you.ghost");
+  await expect(ghost).toHaveText("Run the tests");
+  await expect(phone.locator(".ghost-note")).toHaveText("Sent, waiting for Claude");
+  // A refresh without the new prompt keeps it pending, even though the same words are there from before.
+  await conversation(desk, ["Run the tests"]);
+  await expect(ghost).toHaveCount(1);
+  await conversation(desk, ["Run the tests", "Run the tests"]);
+  await expect(ghost).toHaveCount(0);
+  await expect(phone.locator(".chat .you")).toHaveText(["Run the tests", "Run the tests"]);
+});
+
+test("takes a refused prompt off the chat and puts it back in the box", async ({ context }) => {
+  const { desk, phone } = await paired(context, LIVE);
+  await openFirst(phone, desk);
+  await phone.locator(".prompt-input").fill("Add a test");
+  await phone.locator(".send").click();
+  await expect(phone.locator(".chat .you.ghost")).toHaveText("Add a test");
+  await desk.evaluate(() => window.desk.send({ type: "error", message: "That session can't take a prompt right now" }));
+  await expect(phone.locator(".chat .you.ghost")).toHaveCount(0);
+  await expect(phone.locator(".prompt-input")).toHaveValue("Add a test");
+});
+
+test("keeps the header and the prompt box on screen while the chat scrolls, with the version under the box", async ({ context }) => {
+  const { desk, phone } = await paired(context, LIVE);
+  await openFirst(phone, desk);
+  await conversation(desk, Array.from({ length: 40 }, (_, n) => `Prompt number ${n}`));
+  await expect(phone.locator(".chat .you")).toHaveCount(40);
+  await phone.evaluate(() => window.scrollTo(0, document.body.scrollHeight / 2));
+  const viewport = phone.viewportSize();
+  const header = await phone.locator(".top").boundingBox();
+  const footer = await phone.locator(".bottom").boundingBox();
+  expect(header.y).toBe(0);
+  expect(Math.round(footer.y + footer.height)).toBe(viewport.height);
+  const box = await phone.locator(".prompt-form").boundingBox();
+  const version = await phone.locator(".bottom .version").boundingBox();
+  expect(version.y).toBeGreaterThan(box.y + box.height - 1);
+});
+
+test("goes back to the sessions from the menu", async ({ context }) => {
+  const { desk, phone } = await paired(context);
+  await openFirst(phone, desk);
+  await phone.locator(".menu-button").click();
+  await expect(phone.locator(".menu")).toBeVisible();
+  await phone.locator(".menu-sessions").click();
+  await expect(phone.locator(".menu")).toBeHidden();
+  await expect(phone.locator(".screen-list")).toBeVisible();
+  await expect.poll(() => lastOfType(desk, "closeSession")).toBeDefined();
+});
+
+test("closes the menu on a tap elsewhere", async ({ context }) => {
+  const { phone } = await paired(context);
+  await phone.locator(".menu-button").click();
+  await expect(phone.locator(".menu")).toBeVisible();
+  await phone.locator("main").click({ position: { x: 5, y: 5 } });
+  await expect(phone.locator(".menu")).toBeHidden();
+});

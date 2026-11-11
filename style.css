@@ -27,13 +27,15 @@
 }
 
 * { box-sizing: border-box; }
-html, body { margin: 0; overflow-x: hidden; }
+/* clip, not hidden: hidden makes the body its own scroller, and the header and footer stop sticking. */
+html, body { margin: 0; overflow-x: clip; }
 body {
+  min-height: 100dvh; display: flex; flex-direction: column;
   background: var(--bg);
   color: var(--text);
   font: 16px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
-  padding-bottom: env(safe-area-inset-bottom);
 }
+main { flex: 1; }
 
 .top {
   position: sticky; top: 0; z-index: 2;
@@ -47,6 +49,14 @@ body {
 .status { font-size: 13px; color: var(--muted); white-space: nowrap; }
 .status[data-status="connected"] { color: #2e7d32; }
 .status[data-status="reconnecting"], .status[data-status="connecting"] { color: var(--accent); }
+.menu-button { font-size: 22px; line-height: 1; background: none; border: 0; color: var(--text); padding: 0 0 0 6px; }
+.menu {
+  position: absolute; top: 100%; right: 8px; min-width: 200px;
+  display: flex; flex-direction: column; padding: 4px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
+}
+.menu button { text-align: left; background: none; border: 0; color: var(--text); padding: 10px 12px; border-radius: 6px; }
 
 main { padding: 12px 16px 16px; }
 .screen p { margin: 0 0 12px; }
@@ -79,18 +89,21 @@ main { padding: 12px 16px 16px; }
   background: var(--you); border-radius: 12px 12px 2px 12px; padding: 8px 12px;
 }
 .claude { padding: 2px 2px; }
+.you.ghost { opacity: 0.55; border: 1px dashed var(--muted); }
+.ghost-note { align-self: flex-end; margin-top: -4px; font-size: 12px; color: var(--muted); }
 .tools { color: var(--muted); font-size: 14px; }
 .tools summary { cursor: pointer; }
 .tools summary::marker { color: var(--muted); }
 .tools ul { margin: 4px 0 0; padding-left: 20px; overflow-wrap: anywhere; }
 .loading { color: var(--muted); }
 
-.composer {
+.bottom {
   position: sticky; bottom: 0; z-index: 2;
-  padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
+  padding-bottom: env(safe-area-inset-bottom);
   background: var(--panel);
   border-top: 1px solid var(--border);
 }
+.composer { padding: 10px 16px 0; }
 .prompt-form { display: flex; gap: 8px; align-items: flex-end; }
 .prompt-input {
   flex: 1; min-width: 0; resize: vertical;
@@ -142,7 +155,7 @@ fieldset { border: 0; margin: 0 0 10px; padding: 0; }
   border: 1px solid var(--border); border-radius: 8px; background: var(--panel); color: var(--text);
 }
 
-.diagnostics { margin: 8px 16px 0; font-size: 13px; color: var(--muted); }
+.diagnostics { margin: 8px 0 0; font-size: 13px; color: var(--muted); }
 .diagnostics summary { cursor: pointer; }
 .diagnostics-copy { margin: 6px 0; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); color: var(--text); padding: 4px 10px; }
 .diagnostics-log {
@@ -157,5 +170,5 @@ fieldset { border: 0; margin: 0 0 10px; padding: 0; }
   background: var(--text); color: var(--bg);
   text-align: center;
 }
-.version { margin: 0; padding: 4px 16px 12px; font-size: 11px; color: var(--muted); text-align: center; }
+.version { margin: 0; padding: 4px 16px 6px; font-size: 11px; color: var(--muted); text-align: center; }
 [hidden] { display: none !important; }

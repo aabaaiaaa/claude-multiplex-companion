@@ -14,6 +14,11 @@
     <button type="button" class="back" hidden aria-label="Back to sessions">‹</button>
     <h1 class="title">Sessions</h1>
     <span class="status" data-status="connecting">Connecting…</span>
+    <button type="button" class="menu-button" aria-label="Menu" aria-haspopup="true" aria-expanded="false">☰</button>
+    <nav class="menu" hidden>
+      <button type="button" class="menu-sessions">Sessions</button>
+      <button type="button" class="menu-details">Connection details</button>
+    </nav>
   </header>
 
   <main>
@@ -37,24 +42,26 @@
     <section class="screen screen-chat" hidden>
       <div class="chat"></div>
     </section>
+
+    <details class="diagnostics">
+      <summary>Connection details</summary>
+      <button type="button" class="diagnostics-copy">Copy</button>
+      <pre class="diagnostics-log"></pre>
+    </details>
   </main>
 
-  <footer class="composer" hidden>
-    <div class="card" hidden></div>
-    <form class="prompt-form">
-      <textarea class="prompt-input" rows="2" placeholder="Message Claude…"></textarea>
-      <button type="submit" class="send">Send</button>
-    </form>
-    <p class="prompt-reason" hidden></p>
+  <footer class="bottom">
+    <div class="composer" hidden>
+      <div class="card" hidden></div>
+      <form class="prompt-form">
+        <textarea class="prompt-input" rows="2" placeholder="Message Claude…"></textarea>
+        <button type="submit" class="send">Send</button>
+      </form>
+      <p class="prompt-reason" hidden></p>
+    </div>
+    <p class="version"></p>
   </footer>
 
-  <details class="diagnostics">
-    <summary>Connection details</summary>
-    <button type="button" class="diagnostics-copy">Copy</button>
-    <pre class="diagnostics-log"></pre>
-  </details>
-
   <div class="toast" role="status" hidden></div>
-  <p class="version"></p>
 </body>
 </html>

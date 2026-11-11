@@ -22,6 +22,12 @@ const state = {
   openId: null,
   cards: new Map(),
   answered: new Set(),
+  status: "connecting",
+  showDetails: false,
+  /** Prompts sent but not yet in the transcript, per session: { text, seen, sentAt }. */
+  ghosts: new Map(),
+  /** The open session's last conversation, so ghosts can be redrawn without a new one. */
+  entries: [],
 };
 
 function el(tag, cls, text) {
@@ -75,6 +81,7 @@ function renderList() {
 
 function openSession(id) {
   state.openId = id;
+  state.entries = [];
   $(".title").textContent = openRow()?.name ?? "Session";
   $(".chat").replaceChildren(el("p", "loading", "Loading…"));
   showScreen("chat");
@@ -88,11 +95,34 @@ function closeSession() {
   showScreen("list");
 }
 
+const promptKey = text => text.replace(/\s+/g, " ").trim();
+const promptCount = (entries, text) => entries.filter(t => t.prompt && promptKey(t.prompt) === promptKey(text)).length;
+
+/** A ghost goes once the transcript holds one more copy of its prompt than when it was sent. */
+function settleGhosts(sessionId, entries) {
+  const ghosts = state.ghosts.get(sessionId);
+  if (!ghosts) return;
+  const used = new Map();
+  const left = ghosts.filter(g => {
+    const key = promptKey(g.text);
+    const taken = used.get(key) ?? 0;
+    if (promptCount(entries, g.text) - g.seen > taken) {
+      used.set(key, taken + 1);
+      return false;
+    }
+    return true;
+  });
+  if (left.length) state.ghosts.set(sessionId, left);
+  else state.ghosts.delete(sessionId);
+}
+
 function renderChat(entries) {
+  state.entries = entries;
   const chat = $(".chat");
   const nearBottom = window.innerHeight + window.scrollY >= document.body.scrollHeight - 80;
   chat.replaceChildren();
-  if (entries.length === 0) chat.append(el("p", "loading", "Nothing in this conversation yet."));
+  const ghosts = state.ghosts.get(state.openId) ?? [];
+  if (entries.length === 0 && ghosts.length === 0) chat.append(el("p", "loading", "Nothing in this conversation yet."));
   for (const turn of entries) {
     if (turn.prompt) chat.append(el("div", "you", turn.prompt));
     for (const item of turn.items) {
@@ -108,6 +138,7 @@ function renderChat(entries) {
       }
     }
   }
+  for (const g of ghosts) chat.append(el("div", "you ghost", g.text), el("span", "ghost-note", "Sent, waiting for Claude"));
   if (nearBottom) window.scrollTo(0, document.body.scrollHeight);
 }
 
@@ -244,9 +275,25 @@ $(".prompt-form").addEventListener("submit", e => {
     return;
   }
   input.value = "";
+  const ghosts = state.ghosts.get(state.openId) ?? [];
+  const seen = promptCount(state.entries, text) + ghosts.filter(g => promptKey(g.text) === promptKey(text)).length;
+  ghosts.push({ text, seen, sentAt: Date.now() });
+  state.ghosts.set(state.openId, ghosts);
+  renderChat(state.entries);
 });
 
 $(".back").addEventListener("click", closeSession);
+
+/** An error just after sending is the app refusing that prompt: take its ghost back off. */
+function dropRefusedGhost() {
+  const ghosts = state.ghosts.get(state.openId);
+  const last = ghosts?.at(-1);
+  if (!last || Date.now() - last.sentAt > 5000) return;
+  ghosts.pop();
+  if (!ghosts.length) state.ghosts.delete(state.openId);
+  $(".prompt-input").value ||= last.text;
+  renderChat(state.entries);
+}
 
 // ---- Messages from the app --------------------------------------------------
 
@@ -262,6 +309,7 @@ function onMessage(m) {
       }
       break;
     case "conversation":
+      if (Array.isArray(m.entries)) settleGhosts(m.sessionId, m.entries);
       if (m.sessionId === state.openId && Array.isArray(m.entries)) renderChat(m.entries);
       break;
     case "prompt":
@@ -270,6 +318,7 @@ function onMessage(m) {
       if (m.sessionId === state.openId) renderComposer();
       break;
     case "error":
+      dropRefusedGhost();
       toast(String(m.message ?? "Something went wrong"));
       if (state.openId) renderComposer();
       break;
@@ -289,6 +338,40 @@ function logLine(text) {
   $(".diagnostics-log").textContent = logLines.join("\n");
 }
 
+/** Shown until connected; after that only from the menu. */
+function renderDiagnostics() {
+  $(".diagnostics").hidden = state.status === "connected" && !state.showDetails;
+  $(".menu-details").textContent = state.showDetails ? "Hide connection details" : "Connection details";
+  $(".menu-sessions").hidden = state.status !== "connected";
+}
+
+function setMenu(open) {
+  $(".menu").hidden = !open;
+  $(".menu-button").setAttribute("aria-expanded", String(open));
+}
+
+$(".menu-button").addEventListener("click", e => {
+  e.stopPropagation();
+  setMenu($(".menu").hidden);
+});
+document.addEventListener("click", e => {
+  if (!$(".menu").hidden && !e.target.closest(".menu")) setMenu(false);
+});
+$(".menu-sessions").addEventListener("click", () => {
+  setMenu(false);
+  if (state.openId) closeSession();
+  else showScreen("list");
+});
+$(".menu-details").addEventListener("click", () => {
+  setMenu(false);
+  state.showDetails = !state.showDetails;
+  renderDiagnostics();
+  if (state.showDetails) {
+    $(".diagnostics").open = true;
+    $(".diagnostics").scrollIntoView({ block: "start" });
+  }
+});
+
 $(".diagnostics-copy").addEventListener("click", () => {
   const text = [navigator.userAgent, ...logLines].join("\n");
   navigator.clipboard?.writeText(text).then(() => toast("Copied"), () => toast("Couldn't copy; select the text instead"));
@@ -300,6 +383,8 @@ const connection = new Connection({
     const s = $(".status");
     s.textContent = STATUS_TEXT[status];
     s.dataset.status = status;
+    state.status = status;
+    renderDiagnostics();
     if (status === "unpaired") showScreen("unpaired");
     if (status === "connected" || status === "ended") $(".trouble").hidden = true;
     if (status === "connected") {

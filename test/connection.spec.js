@@ -79,7 +79,11 @@ test("logs each connection step under Connection details, ready to copy", async 
   await openDesk(context, id);
   const phone = await openPhone(context, id);
   await expect(phone.locator(".status")).toHaveText("Connected");
-  await phone.locator(".diagnostics summary").click();
+  // Once connected the details are tucked away, behind the menu.
+  await expect(phone.locator(".diagnostics")).toBeHidden();
+  await phone.locator(".menu-button").click();
+  await phone.locator(".menu-details").click();
+  await expect(phone.locator(".diagnostics")).toBeVisible();
   const log = phone.locator(".diagnostics-log");
   await expect(log).toContainText("Pairing server: connected");
   await expect(log).toContainText("Direct connection: open");
@@ -99,6 +103,7 @@ test("suggests mobile data or another Wi-Fi when the connection stalls, and hide
   const stalled = await openDesk(context, id, { stall: true });
   const phone = await openPhone(context, id);
   await expect(phone.locator(".trouble")).toBeHidden();
+  await expect(phone.locator(".diagnostics")).toBeVisible();
   await expect(phone.locator(".trouble")).toBeVisible({ timeout: 30_000 });
   await expect(phone.locator(".trouble")).toContainText("mobile data");
   await expect(phone.locator(".trouble")).toContainText("different Wi-Fi");
@@ -108,4 +113,5 @@ test("suggests mobile data or another Wi-Fi when the connection stalls, and hide
   await openDesk(context, id);
   await expect(phone.locator(".status")).toHaveText("Connected", { timeout: 30_000 });
   await expect(phone.locator(".trouble")).toBeHidden();
+  await expect(phone.locator(".diagnostics")).toBeHidden();
 });
