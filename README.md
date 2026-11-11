@@ -1,7 +1,7 @@
 # claude-multiplex companion
 
 A phone page for claude-multiplex, a desktop app that runs several Claude Code sessions side
-by side. Scan the QR code in the app's **Settings → Phone companion**, and this page connects
+by side. Scan the QR code from the phone button (📱) in the app's top bar, and this page connects
 straight to the app. From the page you can:
 - see your sessions;
 - read each one's conversation, with tool calls folded into groups;
@@ -50,9 +50,9 @@ served from `node_modules`.
 1. Run `npm run serve`.
 2. Start the desktop app with `CMX_COMPANION_URL=http://localhost:8123/` set, so its QR code links
    here. It still uses the PeerJS cloud server.
-3. In the app, open **Settings → Phone companion → Pair a phone**, and open the link it shows in
-   a desktop browser, or scan it with a phone on the same network (using your machine's address
-   instead of `localhost`).
+3. In the app, press the phone button (📱) in the top bar, then **Pair a phone**. Open the link it
+   shows in a desktop browser, or scan it with a phone on the same network (using your machine's
+   address instead of `localhost`).
 
 ## Deploying
 
