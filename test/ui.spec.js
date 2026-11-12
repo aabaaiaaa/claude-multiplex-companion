@@ -653,6 +653,39 @@ test("leaves room between the end of the chat and the prompt box", async ({ cont
   expect(footer.y - (since.y + since.height), "space above the footer").toBeGreaterThanOrEqual(16);
 });
 
+test("keeps the prompt box above the phone's keyboard, where the keyboard covers the page", async ({ context }) => {
+  const { desk, phone } = await paired(context, LIVE);
+  await openFirst(phone, desk);
+  await desk.evaluate(() => window.desk.send({ type: "conversation", sessionId: "session-1", mtimeMs: Date.now(),
+    entries: Array.from({ length: 30 }, (_, n) => ({ kind: "turn", index: n, prompt: `Prompt ${n}`, items: [{ kind: "text", text: "Done." }] })) }));
+  // Android's Chrome is asked to shrink the page for the keyboard instead.
+  expect(await phone.locator("meta[name=viewport]").getAttribute("content")).toContain("interactive-widget=resizes-content");
+  const footerBottom = async () => { const b = await phone.locator(".bottom").boundingBox(); return b.y + b.height; };
+  const height = phone.viewportSize().height;
+  expect(Math.abs((await footerBottom()) - height), "at the bottom with no keyboard").toBeLessThan(2);
+  // As an iPhone's keyboard does: the page stays its size, and only what's visible shrinks.
+  const keyboard = 300;
+  const setVisible = h => phone.evaluate(visible => {
+    Object.defineProperty(window.visualViewport, "height", { configurable: true, get: () => visible });
+    window.visualViewport.dispatchEvent(new Event("resize"));
+  }, h);
+  await phone.locator(".prompt-input").focus();
+  await setVisible(height - keyboard);
+  await expect.poll(footerBottom, { message: "the footer rides above the keyboard" }).toBeLessThanOrEqual(height - keyboard + 1);
+  await expect(phone.locator(".prompt-input")).toBeInViewport();
+  // The keyboard closing puts it back.
+  await setVisible(height);
+  await expect.poll(async () => Math.abs((await footerBottom()) - height)).toBeLessThan(2);
+  // Pinch-zoomed in, what's visible shrinks with no keyboard: the footer stays where it is.
+  await phone.evaluate(visible => {
+    Object.defineProperty(window.visualViewport, "scale", { configurable: true, get: () => 2 });
+    Object.defineProperty(window.visualViewport, "height", { configurable: true, get: () => visible });
+    window.visualViewport.dispatchEvent(new Event("resize"));
+  }, height / 2);
+  await phone.waitForTimeout(200);
+  expect(Math.abs((await footerBottom()) - height), "not lifted for a zoom").toBeLessThan(2);
+});
+
 test("says how long since Claude's last reply once things go quiet", async ({ context }) => {
   const id = deskId();
   const desk = await openDesk(context, id);

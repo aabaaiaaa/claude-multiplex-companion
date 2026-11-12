@@ -502,6 +502,20 @@ function fitInput() {
   renderJumps();
 }
 
+/** How much of the page the phone's keyboard covers, as `--keyboard` for the footer. Android's
+ *  Chrome shrinks the page for it instead (the viewport's interactive-widget), which leaves this 0;
+ *  iPhones and other browsers draw the keyboard over the page, hiding the prompt box. */
+function fitKeyboard() {
+  const vv = window.visualViewport;
+  if (!vv) return;
+  // Pinch-zoomed, what's visible shrinks too, with no keyboard; a keyboard never changes the zoom.
+  const zoomed = Math.abs(vv.scale - 1) > 0.01;
+  const covered = zoomed ? 0 : Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop));
+  document.documentElement.style.setProperty("--keyboard", `${covered}px`);
+}
+window.visualViewport?.addEventListener("resize", fitKeyboard);
+window.visualViewport?.addEventListener("scroll", fitKeyboard);
+
 $(".prompt-input").addEventListener("input", () => {
   fitInput();
   noteActivity();

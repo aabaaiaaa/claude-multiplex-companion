@@ -147,7 +147,9 @@ main { padding: 12px 16px 24px; }
 .left-closing { color: var(--muted); }
 
 .bottom {
-  position: sticky; bottom: 0; z-index: 2;
+  /* --keyboard: how much of the page the phone's keyboard covers, where the browser draws it over
+     the page rather than shrinking it (app.js), so the prompt box rides above the keyboard. */
+  position: sticky; bottom: var(--keyboard, 0px); z-index: 2;
   padding-bottom: env(safe-area-inset-bottom);
   background: var(--panel);
   border-top: 1px solid var(--border);
