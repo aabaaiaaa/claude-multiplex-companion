@@ -575,18 +575,22 @@ test("offers a newer version from the menu, and loads it", async ({ context }) =
   await expect(phone.locator(".menu-button")).not.toHaveAttribute("data-update", "1");
 });
 
-test("jumps up to Claude's last response, and down to the end", async ({ context }) => {
+test("jumps up to the start of Claude's last reply, and down to the end", async ({ context }) => {
   const { desk, phone } = await paired(context, LIVE);
   await openFirst(phone, desk);
   const long = Array.from({ length: 80 }, (_, n) => `Line ${n} of the last response.`).join("\n");
   await desk.evaluate(last => window.desk.send({ type: "conversation", sessionId: "session-1", mtimeMs: Date.now(),
     entries: [
       ...Array.from({ length: 20 }, (_, n) => ({ kind: "turn", prompt: `Prompt ${n}`, items: [{ kind: "text", text: "Done." }] })),
-      { kind: "turn", prompt: "Explain it", items: [{ kind: "text", text: last }] },
+      { kind: "turn", prompt: "Explain it", items: [
+        { kind: "text", text: last }, { kind: "tools", labels: ["Read a file"] }, { kind: "text", text: "All done." },
+      ] },
     ] }), long);
   const up = phone.locator(".jump-reply");
   const down = phone.locator(".jump-end");
-  const replyTop = () => phone.locator(".chat .claude").last().evaluate(e => e.getBoundingClientRect().top);
+  // The reply's first text, not its short last line.
+  const start = phone.locator(".chat .claude", { hasText: "Line 0 of the last response." });
+  const replyTop = () => start.evaluate(e => e.getBoundingClientRect().top);
   const headerBottom = () => phone.locator(".top").evaluate(e => e.getBoundingClientRect().bottom);
 
   // Up at the top, above the last response: only the way down shows.

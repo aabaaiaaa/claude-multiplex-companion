@@ -172,6 +172,7 @@ function renderChat({ keepPlace = false } = {}) {
   if (entries.length === 0 && ghosts.length === 0) chat.append(el("p", "loading", "Nothing in this conversation yet."));
   for (const turn of entries) {
     if (turn.prompt) chat.append(el("div", "you", turn.prompt));
+    const replyFrom = chat.childElementCount;
     for (const item of turn.items) {
       if (item.kind === "text") {
         const text = el("div", "claude");
@@ -188,6 +189,7 @@ function renderChat({ keepPlace = false } = {}) {
         chat.append(details);
       }
     }
+    chat.children[replyFrom]?.classList.add("reply-start");
   }
   for (const g of ghosts) {
     const note = el("span", "ghost-note");
@@ -254,10 +256,11 @@ window.addEventListener("scroll", () => {
 /** Within this of the bottom counts as at the end. */
 const AT_END_PX = 24;
 
-const lastReply = () => [...document.querySelectorAll(".chat .claude")].at(-1) ?? null;
+/** Where Claude's last reply begins: its first text or tool calls, not its final line. */
+const lastReply = () => [...document.querySelectorAll(".chat .reply-start")].at(-1) ?? null;
 const atEnd = () => window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - AT_END_PX;
 
-/** ↑ once you're below the start of Claude's last response; ↓ until you're at the end. */
+/** ↑ once you're below the start of Claude's last reply; ↓ until you're at the end. */
 function renderJumps() {
   const inChat = !!state.openId && !$(".screen-chat").hidden;
   const reply = inChat ? lastReply() : null;
