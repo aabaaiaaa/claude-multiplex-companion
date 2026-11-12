@@ -233,7 +233,7 @@ fieldset { border: 0; margin: 0 0 10px; padding: 0; }
 .diagnostics::backdrop { background: rgba(0, 0, 0, 0.5); }
 .dialog-head { display: flex; align-items: center; gap: 8px; }
 .dialog-head h2 { flex: 1; margin: 0; font-size: 1rem; }
-.diagnostics-close { background: none; border: 0; color: var(--text); font-size: 18px; padding: 2px 6px; }
+.diagnostics-close, .viewer-close { background: none; border: 0; color: var(--text); font-size: 18px; padding: 2px 6px; }
 .trouble-details { display: block; margin-top: 8px; border: 1px solid var(--accent); border-radius: 6px; background: var(--panel); color: var(--text); padding: 4px 10px; }
 .diagnostics-copy { margin: 0; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); color: var(--text); padding: 4px 10px; }
 .diagnostics-note, .diagnostics-route { margin: 0; }
@@ -243,6 +243,37 @@ fieldset { border: 0; margin: 0 0 10px; padding: 0; }
   background: var(--panel); font: 0.6875rem/1.4 ui-monospace, Consolas, monospace;
   white-space: pre-wrap; overflow-wrap: anywhere;
 }
+
+/* The image viewer: the whole screen, in the dialog's colours. Nothing in it pans or zooms the page. */
+.image-viewer {
+  width: 100vw; height: 100dvh; max-width: none; max-height: none; margin: 0; padding: 0;
+  display: none; flex-direction: column;
+  border: 0; background: var(--bg); color: var(--text); font-size: 0.8125rem;
+  touch-action: none; overscroll-behavior: contain;
+}
+.image-viewer[open] { display: flex; }
+.image-viewer::backdrop { background: rgba(0, 0, 0, 0.5); }
+.image-viewer .dialog-head { padding: 12px; border-bottom: 1px solid var(--border); background: var(--panel); }
+.viewer-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.viewer-stage { position: relative; flex: 1; min-height: 0; overflow: hidden; touch-action: none; }
+.viewer-stage img {
+  position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain;
+  transform-origin: 0 0; user-select: none; -webkit-user-select: none; -webkit-user-drag: none;
+}
+.viewer-message {
+  position: absolute; inset: 0; padding: 16px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+  text-align: center; pointer-events: none;
+}
+.viewer-message > * { pointer-events: auto; }
+.viewer-status { margin: 0; color: var(--muted); }
+.viewer-actions { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.viewer-actions button {
+  border: 1px solid var(--border); border-radius: 6px; background: var(--panel); color: var(--text);
+  padding: 4px 10px; font: inherit;
+}
+.viewer-actions button:disabled { opacity: 0.5; }
+.viewer-reason { margin: 0; color: var(--muted); }
 
 .toast {
   position: fixed; left: 16px; right: 16px; bottom: 96px; z-index: 3;

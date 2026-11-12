@@ -85,6 +85,20 @@
     <pre class="diagnostics-log"></pre>
   </dialog>
 
+  <dialog class="image-viewer" aria-labelledby="viewer-title">
+    <div class="dialog-head">
+      <h2 id="viewer-title" class="viewer-title"></h2>
+      <button type="button" class="viewer-close" aria-label="Close">✕</button>
+    </div>
+    <div class="viewer-stage">
+      <img alt="" hidden />
+      <div class="viewer-message">
+        <p class="viewer-status" role="status"></p>
+        <div class="viewer-actions" hidden></div>
+      </div>
+    </div>
+  </dialog>
+
   <footer class="bottom">
     <div class="jumps">
       <button type="button" class="jump-reply" aria-label="Scroll to the start of Claude's last reply" hidden>↑</button>

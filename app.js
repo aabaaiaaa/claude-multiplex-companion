@@ -964,7 +964,7 @@ setTextSize(SIZES.includes(savedSize) ? savedSize : 1, false);
 /** How often to look for a newer deploy while the page is open. */
 const UPDATE_CHECK_MS = 5 * 60_000;
 /** Everything the page loads from its own site, fetched afresh before reloading. */
-const PAGE_FILES = ["index.html", "app.js", "auth.js", "connection.js", "desktop-version.js", "format.js", "style.css", "version.js"];
+const PAGE_FILES = ["index.html", "app.js", "auth.js", "connection.js", "desktop-version.js", "format.js", "style.css", "version.js", "viewer.js"];
 
 /** The deployed version, read past the browser's cache; null if it can't be read. */
 async function deployedVersion() {
