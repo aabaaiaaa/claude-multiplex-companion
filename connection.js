@@ -12,6 +12,35 @@ const UNAVAILABLE_LIMIT = 3;
 
 /** ICE states after which WebRTC soon drops its candidate pairs from the stats. */
 const ICE_GAVE_UP = ["disconnected", "failed"];
+/** ICE states with a route in use, and those after which there's none. */
+const ICE_CONNECTED = ["connected", "completed"];
+const ROUTE_GONE = ["disconnected", "failed", "closed"];
+
+/** The pair of candidates in use, by kind, from WebRTC's stats; null when none is picked yet.
+ *  Chrome and Safari name the pair on the transport, Firefox marks it selected. */
+export async function readRoute(pc) {
+  const stats = await pc.getStats();
+  const byId = new Map();
+  let selectedId, selected, nominated;
+  stats.forEach(s => {
+    if (s.id) byId.set(s.id, s);
+    if (s.type === "transport" && s.selectedCandidatePairId) selectedId = s.selectedCandidatePairId;
+    if (s.type === "candidate-pair" && s.selected) selected = s;
+    if (s.type === "candidate-pair" && s.nominated && s.state === "succeeded") nominated ??= s;
+  });
+  const chosen = (selectedId && byId.get(selectedId)) || selected || nominated;
+  const local = chosen?.localCandidateId && byId.get(chosen.localCandidateId);
+  const remote = chosen?.remoteCandidateId && byId.get(chosen.remoteCandidateId);
+  if (!local || !remote) return null;
+  return {
+    relayed: local.candidateType === "relay" || remote.candidateType === "relay",
+    local: `${local.candidateType ?? "?"}/${local.protocol ?? "?"}`,
+    remote: `${remote.candidateType ?? "?"}/${remote.protocol ?? "?"}`,
+  };
+}
+
+/** "relayed" when either end goes through a TURN relay, else "direct". */
+export const routeKind = route => (route.relayed ? "relayed" : "direct");
 
 /** Wait this long before each retry; the last value repeats. */
 const RETRY_MS = [1000, 2000, 5000, 10000];
@@ -83,9 +112,10 @@ function peerOptions(server) {
  * `onTrouble()` runs when a direct connection didn't open in time.
  */
 export class Connection {
-  constructor({ onStatus, onMessage, onEnded, onTrouble = () => {}, onLog = () => {} }) {
+  constructor({ onStatus, onMessage, onEnded, onTrouble = () => {}, onLog = () => {}, onRoute = () => {} }) {
     this.onStatus = onStatus;
     this.log = onLog;
+    this.onRoute = onRoute;
     this.unavailable = 0;
     this.openTimer = null;
     this.onMessage = onMessage;
@@ -181,6 +211,8 @@ export class Connection {
       // Binary, so PeerJS splits large messages; its JSON mode drops anything over ~16 KB.
       const conn = peer.connect(this.pairing.peer, { serialization: "binary", reliable: true });
       this.conn = conn;
+      // A new connection's route is unknown until it's up.
+      this.onRoute(null);
       this.watchIce(conn);
       clearTimeout(this.openTimer);
       this.openTimer = setTimeout(() => {
@@ -244,9 +276,35 @@ export class Connection {
     const pc = conn.peerConnection;
     if (!pc) return;
     let reported = false;
+    /** The route last logged, so only a change is logged again. */
+    let shown = null;
+    let followed = false;
+    const checkRoute = () => {
+      // The transport exists only once the connection is set up, so it's followed from here.
+      const ice = pc.sctp?.transport?.iceTransport;
+      if (ice && !followed) {
+        followed = true;
+        ice.addEventListener("selectedcandidatepairchange", checkRoute);
+      }
+      readRoute(pc).then(route => {
+        if (!route || !ICE_CONNECTED.includes(pc.iceConnectionState)) return;
+        const key = `${route.local} ${route.remote}`;
+        if (key === shown) return;
+        shown = key;
+        this.log(`Route: ${routeKind(route)} (this phone ${route.local} ↔ the computer ${route.remote})`);
+        if (conn === this.conn) this.onRoute(routeKind(route));
+      }).catch(() => {});
+    };
     pc.addEventListener("icegatheringstatechange", () => this.log(`ICE gathering: ${pc.iceGatheringState}`));
+    // Not before: Chrome reuses a stats report for a moment, and one read before the secure link
+    // is up has no certificates, which would fail the pairing check that reads them next.
+    pc.addEventListener("connectionstatechange", () => { if (pc.connectionState === "connected") checkRoute(); });
     pc.addEventListener("iceconnectionstatechange", () => {
       this.log(`ICE connection state: ${pc.iceConnectionState}`);
+      if (ROUTE_GONE.includes(pc.iceConnectionState)) {
+        shown = null;
+        if (conn === this.conn) this.onRoute(null);
+      }
       if (!reported && ICE_GAVE_UP.includes(pc.iceConnectionState)) {
         reported = true;
         this.reportCandidates(conn);

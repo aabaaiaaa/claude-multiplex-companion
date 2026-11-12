@@ -714,14 +714,52 @@ function onMessage(m) {
 // ---- Connection details ----------------------------------------------------
 
 const LOG_LIMIT = 300;
-const logLines = [];
-const started = Date.now();
+/** Lines older than this are cleared; the dialog says so. */
+const LOG_AGE_MS = 5 * 60_000;
+const logEntries = [];
+let logExpiry = null;
+/** The route the connection to the app takes, such as "direct"; null when there's none. */
+let route = null;
+
+const two = n => String(n).padStart(2, "0");
+/** "14:03:27", in local time. */
+const clockTime = ms => { const d = new Date(ms); return `${two(d.getHours())}:${two(d.getMinutes())}:${two(d.getSeconds())}`; };
+const logLines = () => logEntries.map(e => `${clockTime(e.at)}  ${e.text}`);
+/** Kept apart from the log, so it outlasts the lines that are cleared. */
+const routeLine = () => `Current route: ${(state.status === "connected" && route) || "not connected"}`;
+
+function renderLog() {
+  $(".diagnostics-log").textContent = logLines().join("\n");
+  $(".diagnostics-route").textContent = routeLine();
+}
+
+function pruneLog() {
+  const cutoff = Date.now() - LOG_AGE_MS;
+  while (logEntries.length && logEntries[0].at <= cutoff) logEntries.shift();
+}
+
+/** Clears the oldest line as it ages, not only when a new one arrives. */
+function scheduleLogExpiry() {
+  if (logExpiry || !logEntries.length) return;
+  logExpiry = setTimeout(() => {
+    logExpiry = null;
+    pruneLog();
+    renderLog();
+    scheduleLogExpiry();
+  }, Math.max(0, logEntries[0].at + LOG_AGE_MS - Date.now()));
+}
 
 function logLine(text) {
-  const t = ((Date.now() - started) / 1000).toFixed(1).padStart(6);
-  logLines.push(`${t}s  ${text}`);
-  if (logLines.length > LOG_LIMIT) logLines.shift();
-  $(".diagnostics-log").textContent = logLines.join("\n");
+  pruneLog();
+  logEntries.push({ at: Date.now(), text });
+  if (logEntries.length > LOG_LIMIT) logEntries.shift();
+  scheduleLogExpiry();
+  renderLog();
+}
+
+function setRoute(next) {
+  route = next;
+  renderLog();
 }
 
 function renderMenu() {
@@ -790,18 +828,20 @@ function closeSoon() {
 }
 
 $(".diagnostics-copy").addEventListener("click", () => {
-  const text = [navigator.userAgent, ...logLines].join("\n");
+  const text = [navigator.userAgent, routeLine(), ...logLines()].join("\n");
   navigator.clipboard?.writeText(text).then(() => toast("Copied"), () => toast("Couldn't copy; select the text instead"));
 });
 
 const connection = new Connection({
   onLog: logLine,
+  onRoute: setRoute,
   onStatus(status) {
     const s = $(".status");
     s.textContent = STATUS_TEXT[status];
     s.dataset.status = status;
     state.status = status;
     renderMenu();
+    renderLog();
     if (status === "unpaired") showScreen("unpaired");
     if (status === "connected" || status === "ended") $(".trouble").hidden = true;
     if (status === "connected") {

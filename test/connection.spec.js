@@ -147,6 +147,28 @@ test("logs each connection step in Connection details, opened over the page from
   await expect(phone.locator(".diagnostics")).toBeHidden();
 });
 
+test("stamps each line with its time, shows the route in use, and clears lines over 5 minutes old", async ({ context }) => {
+  await context.clock.install();
+  const id = deskId();
+  await openDesk(context, id);
+  const phone = await openPhone(context, id);
+  await expect(phone.locator(".status")).toHaveText("Connected");
+  await phone.locator(".menu-button").click();
+  await phone.locator(".menu-details").click();
+  const log = phone.locator(".diagnostics-log");
+  await expect(phone.locator(".diagnostics-note")).toHaveText("Lines older than 5 minutes are cleared.");
+  // Both ends in this browser: a direct route, read from WebRTC once the connection is up.
+  await expect(phone.locator(".diagnostics-route")).toHaveText("Current route: direct");
+  await expect(log).toContainText(/Route: direct \(this phone host\/udp ↔ the computer host\/udp\)/);
+  expect((await log.textContent()).split("\n")[0]).toMatch(/^\d\d:\d\d:\d\d {2}\S/);
+  await expect(log).toContainText("Pairing server: connected");
+
+  // With nothing new logged, the old lines go as they age; the route stays.
+  await phone.clock.fastForward("05:01");
+  await expect(log).not.toContainText("Pairing server: connected");
+  await expect(phone.locator(".diagnostics-route")).toHaveText("Current route: direct");
+});
+
 test("asks for a scan when it was never paired", async ({ page }) => {
   await page.goto("/index.html");
   await expect(page.locator(".screen-unpaired")).toBeVisible();
