@@ -50,8 +50,7 @@ const RETRY_MS = [1000, 2000, 5000, 10000];
 /** How long a disconnect waits for the app's goodbye before letting go anyway. */
 const LEAVE_WAIT_MS = 1500;
 
-/** How long to wait for the app's challenge once connected. An app that sends none predates the
- *  pairing check, so is too old for this page. */
+/** How long to wait for the app's challenge once connected before connecting again. */
 const CHALLENGE_WAIT_MS = 8000;
 
 /** STUN plus the free openrelay TURN servers, for phones on another network. */
@@ -235,7 +234,7 @@ export class Connection {
         this.challengeTimer = setTimeout(() => {
           if (conn !== this.conn || conn.challenge) return;
           this.log(`No pairing check from the app after ${CHALLENGE_WAIT_MS / 1000}s`);
-          this.end("outdated");
+          this.scheduleRetry();
         }, CHALLENGE_WAIT_MS);
       });
       conn.on("data", m => {

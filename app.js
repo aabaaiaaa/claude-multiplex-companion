@@ -78,26 +78,48 @@ const openRow = () => state.sessions.find(s => s.id === state.openId);
 
 // ---- Session list -----------------------------------------------------------
 
+/** The sessions in the app's sidebar groups: the rows come in its order, so each group's are together. */
+function grouped(sessions) {
+  const groups = [];
+  for (const s of sessions) {
+    if (groups.at(-1)?.label !== s.group) groups.push({ label: s.group, sessions: [] });
+    groups.at(-1).sessions.push(s);
+  }
+  return groups;
+}
+
 function renderList() {
   const list = $(".session-list");
   list.replaceChildren();
-  for (const s of state.sessions) {
-    const li = el("li");
-    li.dataset.id = s.id;
-    li.dataset.pending = s.pending ? "1" : "0";
-    li.dataset.live = s.live ? "1" : "0";
-    li.dataset.unseen = state.unseen.has(s.id) ? "1" : "0";
-    const name = el("span", "name", s.name);
-    const badges = el("span", "badges");
-    if (state.unseen.has(s.id)) badges.append(el("span", "badge badge-new", "new"));
-    if (s.pending) badges.append(el("span", "badge badge-pending", "needs you"));
-    badges.append(el("span", "badge", s.state.replace(/_/g, " ")));
-    li.append(name, badges);
-    li.addEventListener("click", () => openSession(s.id));
-    list.append(li);
+  for (const g of grouped(state.sessions)) {
+    const section = el("section", "session-group");
+    const heading = el("h2", "session-group-label", g.label);
+    heading.append(el("span", "session-group-count", ` (${g.sessions.length})`));
+    const rows = el("ul", "session-rows");
+    section.append(heading, rows);
+    list.append(section);
+    for (const s of g.sessions) renderRow(rows, s);
   }
   $(".empty").hidden = state.sessions.length > 0;
   renderUnseen();
+}
+
+function renderRow(rows, s) {
+  const li = el("li");
+  li.dataset.id = s.id;
+  li.dataset.pending = s.pending ? "1" : "0";
+  li.dataset.live = s.live ? "1" : "0";
+  li.dataset.unseen = state.unseen.has(s.id) ? "1" : "0";
+  const name = el("span", "name", s.name);
+  const badges = el("span", "badges");
+  if (state.unseen.has(s.id)) badges.append(el("span", "badge badge-new", "new"));
+  if (s.pending) badges.append(el("span", "badge badge-pending", "needs you"));
+  badges.append(el("span", "badge badge-status", s.status));
+  li.append(name, badges);
+  // A finished turn still running work says what, under the row.
+  if (s.detail) li.append(el("span", "detail", s.detail));
+  li.addEventListener("click", () => openSession(s.id));
+  rows.append(li);
 }
 
 const inChat = () => !$(".screen-chat").hidden;
@@ -153,8 +175,6 @@ function isPrompt(prompt, text) {
   const b = promptKey(text);
   return a === b || (b.length >= 20 && a.includes(b.slice(0, 80)));
 }
-/** The turns as given, each with its turn number (an older app sends none: then its position). */
-const numbered = entries => entries.map((t, i) => (Number.isInteger(t.index) ? t : { ...t, index: i }));
 const newestIndex = entries => entries.reduce((n, t) => Math.max(n, t.index), -1);
 
 /** A ghost goes once a turn newer than any shown when it was sent holds its prompt, or once a
@@ -230,8 +250,7 @@ function renderChat({ keepPlace = false } = {}) {
  *  reading, they stay, and turns the window has moved past join them, so nothing you were
  *  reading vanishes from the middle. */
 function takeLiveWindow(entries, hasEarlier) {
-  const live = numbered(entries);
-  const firstLive = live[0]?.index ?? Infinity;
+  const firstLive = entries[0]?.index ?? Infinity;
   if (nearEnd() || !state.entries.length) {
     state.earlier = [];
     state.moreEarlier = !!hasEarlier;
@@ -242,7 +261,7 @@ function takeLiveWindow(entries, hasEarlier) {
     state.earlier = [...state.earlier, ...passed].filter(t => t.index < firstLive);
     if (!state.earlier.length) state.moreEarlier = !!hasEarlier;
   }
-  state.entries = live;
+  state.entries = entries;
 }
 
 /** Asks for the page of turns before the first one shown. */
@@ -262,7 +281,7 @@ function loadEarlier() {
 /** A page of earlier turns: added above, keeping your place. */
 function takeEarlier(m) {
   if (m.sessionId !== state.openId || m.before !== state.requestedBefore) return;
-  const page = numbered(m.entries ?? []);
+  const page = Array.isArray(m.entries) ? m.entries : [];
   const shown = new Set([...state.earlier, ...state.entries].map(t => t.index));
   state.earlier = [...page.filter(t => !shown.has(t.index)), ...state.earlier];
   state.moreEarlier = !!m.hasEarlier && page.length > 0;
@@ -625,8 +644,8 @@ const BUZZ_PATTERN = [200, 100, 200];
 /** One buzz for several sessions needing you at once. */
 const BUZZ_GAP_MS = 2000;
 
-/** Waiting on you: Claude asking (a card, or Attention), or done with its turn. */
-const needsYou = s => Boolean(s.pending) || s.state === "attention" || s.state === "waiting";
+/** Your turn, by the app's rule: Claude asking, or done with nothing left running. */
+const needsYou = s => s.awaiting === true;
 /** The sessions that needed you at the last list; null until the first, which never buzzes. */
 let needing = null;
 let lastBuzz = 0;
@@ -706,9 +725,9 @@ function onMessage(m) {
       break;
     case "conversation":
       if (!Array.isArray(m.entries)) break;
-      settleGhosts(m.sessionId, numbered(m.entries));
+      settleGhosts(m.sessionId, m.entries);
       if (m.sessionId !== state.openId) break;
-      noteConversation(numbered(m.entries), m.mtimeMs);
+      noteConversation(m.entries, m.mtimeMs);
       takeLiveWindow(m.entries, m.hasEarlier);
       renderChat();
       break;
@@ -722,7 +741,7 @@ function onMessage(m) {
       break;
     case "welcome":
       if (desktopTooOld(m.appVersion)) {
-        const has = typeof m.appVersion === "string" && m.appVersion ? `version ${m.appVersion}` : "an older version";
+        const has = typeof m.appVersion === "string" && m.appVersion ? `version ${m.appVersion}` : "a version it doesn't say";
         $(".outdated-text").textContent = `This page needs claude-multiplex ${MIN_DESKTOP_VERSION} or later, and the app on your computer is ${has}. Update the app, then pair again from its phone button (📱).`;
         connection.disconnect("outdated");
       }
@@ -889,10 +908,7 @@ const connection = new Connection({
       return;
     }
     if (reason === "outdated") {
-      // No welcome, so no version to name: the app predates the pairing check.
-      if (!$(".outdated-text").textContent) {
-        $(".outdated-text").textContent = `This page needs claude-multiplex ${MIN_DESKTOP_VERSION} or later, and the app on your computer is an older version. Update the app, then pair again from its phone button (📱).`;
-      }
+      // The welcome's version check has already said why.
       showScreen("outdated");
       return;
     }

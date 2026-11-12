@@ -84,7 +84,7 @@
         return;
       }
       if (m.type === "hello") {
-        c.send({ v: 1, type: "welcome", deviceId: m.clientId, ...(desk.appVersion === null ? {} : { appVersion: desk.appVersion }) });
+        c.send({ v: 1, type: "welcome", deviceId: m.clientId, appVersion: desk.appVersion });
         c.send({ v: 1, type: "sessions", sessions: desk.sessions });
       }
       if (m.type === "disconnect") {

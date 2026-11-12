@@ -86,7 +86,7 @@ test("receives a conversation far bigger than one data-channel message", async (
   await phone.locator(".session-list li").first().click();
   const long = "Sample text. ".repeat(4000);
   await desk.evaluate(text => window.desk.send({ type: "conversation", sessionId: "session-1", mtimeMs: 2,
-    entries: [{ kind: "turn", prompt: "Tell me a lot", items: [{ kind: "text", text }] }] }), long);
+    entries: [{ kind: "turn", index: 0, prompt: "Tell me a lot", items: [{ kind: "text", text }] }] }), long);
   await expect(phone.locator(".chat .you")).toHaveText("Tell me a lot");
   expect(await phone.locator(".chat .claude").textContent()).toBe(long);
 });
@@ -133,13 +133,16 @@ test("stops, sending nothing, when the other end can't prove it's the app", asyn
   expect((await deskReceived(desk)).map(m => m.type)).toEqual(["auth"]);
 });
 
-test("asks for an update when the app sends no pairing check", async ({ context }) => {
+test("connects again when the app sends no pairing check, as for any stalled connection", async ({ context }) => {
   const id = deskId();
   const desk = await openDesk(context, id);
   await desk.evaluate(() => { window.desk.noAuth = true; });
   const phone = await openPhone(context, id);
-  await expect(phone.locator(".screen-outdated")).toBeVisible({ timeout: 15_000 });
-  await expect(phone.locator(".outdated-text")).toContainText("an older version");
+  await expect(phone.locator(".status")).toHaveText("Reconnecting…", { timeout: 15_000 });
+  await expect(phone.locator(".screen-outdated")).toBeHidden();
+  // Once the app does send it, the next attempt pairs.
+  await desk.evaluate(() => { window.desk.noAuth = false; });
+  await expect(phone.locator(".status")).toHaveText("Connected", { timeout: 30_000 });
 });
 
 test("proves itself as the desktop app does, by the shared test vector", async ({ page }) => {
@@ -206,7 +209,8 @@ test("stamps each line with its time, shows the route in use, and clears lines o
   await expect(phone.locator(".diagnostics-note")).toHaveText("Lines older than 5 minutes are cleared.");
   // Both ends in this browser: a direct route, read from WebRTC once the connection is up.
   await expect(phone.locator(".diagnostics-route")).toHaveText("Current route: direct");
-  await expect(log).toContainText(/Route: direct \(this phone host\/udp ↔ the computer host\/udp\)/);
+  // Either end's address may be learned during the checks (prflx) rather than offered (host).
+  await expect(log).toContainText(/Route: direct \(this phone (host|prflx)\/udp ↔ the computer (host|prflx)\/udp\)/);
   expect((await log.textContent()).split("\n")[0]).toMatch(/^\d\d:\d\d:\d\d {2}\S/);
   await expect(log).toContainText("Pairing server: connected");
 
@@ -241,8 +245,9 @@ test("suggests mobile data or another Wi-Fi when the connection stalls, and hide
   await expect(phone.locator(".trouble")).toBeHidden();
 });
 
-for (const [appVersion, says] of [["0.24.3", "version 0.24.3"], [null, "an older version"]]) {
-  test(`asks for an update and ends the pairing when the app is too old (${appVersion ?? "no version"})`, async ({ context }) => {
+// An empty version: the app couldn't read its own.
+for (const [appVersion, says] of [["0.24.3", "version 0.24.3"], ["", "a version it doesn't say"]]) {
+  test(`asks for an update and ends the pairing when the app is too old (${appVersion || "empty version"})`, async ({ context }) => {
     const id = deskId();
     const desk = await openDesk(context, id);
     await desk.evaluate(v => { window.desk.appVersion = v; }, appVersion);

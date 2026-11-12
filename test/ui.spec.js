@@ -3,10 +3,20 @@ import { deskId, deskReceived, openDesk, openPhone, phoneLink, routePeerjs } fro
 
 test.beforeEach(async ({ context }) => { await routePeerjs(context); });
 
-const LIVE = [
-  { id: "session-1", name: "parser-work", state: "idle", live: true, canType: true, pending: false, canResume: false },
-  { id: "session-2", name: "docs", state: "resumable", live: false, canType: false, pending: false, canResume: true },
-];
+const STATUS = { idle: "idle", processing: "processing", waiting: "your turn", attention: "needs input", resumable: "stopped" };
+/** A session row as the app sends it: its status and whether it's your turn follow its state,
+ *  unless `extra` says otherwise (a `detail` of what's still running means it isn't). */
+function sessionRow(id, name, state, extra = {}) {
+  const base = {
+    id, name, state, live: state !== "resumable", canType: state !== "resumable", pending: false,
+    canResume: state === "resumable", detail: "", ...extra,
+  };
+  const awaiting = base.pending || state === "attention" || (state === "waiting" && !base.detail);
+  const group = awaiting ? "Awaiting input" : { idle: "Idle", resumable: "Resumable" }[state] ?? "Processing";
+  return { status: STATUS[state], awaiting, group, ...base };
+}
+
+const LIVE = [sessionRow("session-1", "parser-work", "idle"), sessionRow("session-2", "docs", "resumable")];
 
 async function paired(context, sessions) {
   const id = deskId();
@@ -33,10 +43,64 @@ test("lists the sessions with their state, and marks one waiting on you", async 
   const rows = phone.locator(".session-list li");
   await expect(rows).toHaveCount(2);
   await expect(rows.nth(0)).toContainText("parser-work");
-  await expect(rows.nth(0)).toContainText("waiting");
+  await expect(rows.nth(0).locator(".badge-status")).toHaveText("your turn");
   await expect(rows.nth(0)).toHaveAttribute("data-pending", "1");
   await expect(rows.nth(1)).toContainText("docs");
+  await expect(rows.nth(1).locator(".badge-status")).toHaveText("stopped");
   await expect(rows.nth(1)).toHaveAttribute("data-pending", "0");
+  await expect(phone.locator(".session-list .detail"), "nothing's still running").toHaveCount(0);
+});
+
+test("shows the sessions in the app's sidebar groups and order, each group with its count", async ({ context }) => {
+  const { desk, phone } = await paired(context, LIVE);
+  // As the app sends them: by group, newest first within each.
+  await desk.evaluate(s => window.desk.send({ type: "sessions", sessions: s }), [
+    sessionRow("s-a", "review", "attention"),
+    sessionRow("s-b", "parser-work", "waiting"),
+    sessionRow("s-c", "build", "processing"),
+    sessionRow("s-d", "docs", "resumable"),
+    sessionRow("s-e", "notes", "resumable"),
+  ]);
+  const groups = phone.locator(".session-list .session-group");
+  await expect(groups.locator(".session-group-label")).toHaveText(["Awaiting input (2)", "Processing (1)", "Resumable (2)"]);
+  await expect(groups.nth(0).locator("li .name")).toHaveText(["review", "parser-work"]);
+  await expect(groups.nth(2).locator("li .name")).toHaveText(["docs", "notes"]);
+  // Grouped by folder at the PC instead: the app's folder names head the groups.
+  await desk.evaluate(s => window.desk.send({ type: "sessions", sessions: s }), [
+    sessionRow("s-a", "review", "attention", { group: "app" }),
+    sessionRow("s-c", "build", "processing", { group: "app" }),
+    sessionRow("s-b", "parser-work", "waiting", { group: "parser" }),
+  ]);
+  await expect(groups.locator(".session-group-label")).toHaveText(["app (2)", "parser (1)"]);
+  // Opening a row still works from inside its group.
+  await groups.nth(1).locator("li", { hasText: "parser-work" }).click();
+  await expect(phone.locator(".screen-chat")).toBeVisible();
+});
+
+test("says what a finished turn is still running, and buzzes only once it's your turn", async ({ context }) => {
+  await context.addInitScript(() => {
+    window.buzzes = [];
+    Object.defineProperty(navigator, "vibrate", { configurable: true, value: pattern => { window.buzzes.push(pattern); return true; } });
+  });
+  const { desk, phone } = await paired(context, [sessionRow("session-1", "parser-work", "processing")]);
+  const send = rows => desk.evaluate(s => window.desk.send({ type: "sessions", sessions: s }), rows);
+  const row = phone.locator(".session-list li");
+  await send([sessionRow("session-1", "parser-work", "waiting", { status: "waiting on 2 agents", detail: "Still running: 2 agents" })]);
+  await expect(row.locator(".badge-status")).toHaveText("waiting on 2 agents");
+  await expect(row.locator(".detail")).toHaveText("Still running: 2 agents");
+  // The detail runs along the bottom of the row, under the name.
+  const nameBox = await row.locator(".name").boundingBox();
+  const detailBox = await row.locator(".detail").boundingBox();
+  expect(detailBox.y).toBeGreaterThanOrEqual(nameBox.y + nameBox.height);
+  await phone.waitForTimeout(300);
+  expect(await phone.evaluate(() => window.buzzes), "still working: not your turn yet").toEqual([]);
+  await expect(row).toHaveAttribute("data-unseen", "0");
+
+  await send([sessionRow("session-1", "parser-work", "waiting")]);
+  await expect(row.locator(".badge-status")).toHaveText("your turn");
+  await expect(row.locator(".detail")).toHaveCount(0);
+  await expect.poll(() => phone.evaluate(() => window.buzzes)).toEqual([[200, 100, 200]]);
+  await expect(row).toHaveAttribute("data-unseen", "1");
 });
 
 test("shows a session's chat with each run of tool calls collapsed", async ({ context }) => {
@@ -169,7 +233,7 @@ test("fits a phone screen without sideways scrolling", async ({ context }) => {
 });
 
 const conversation = (desk, prompts) => desk.evaluate(p => window.desk.send({ type: "conversation", sessionId: "session-1", mtimeMs: Date.now(),
-  entries: p.map(prompt => ({ kind: "turn", prompt, items: [{ kind: "text", text: "Done." }] })) }), prompts);
+  entries: p.map((prompt, index) => ({ kind: "turn", index, prompt, items: [{ kind: "text", text: "Done." }] })) }), prompts);
 
 test("shows a sent prompt as pending until the transcript has it", async ({ context }) => {
   const { desk, phone } = await paired(context, LIVE);
@@ -246,7 +310,7 @@ test("starts a session that isn't running, then lets you type into it", async ({
   await expect(start).toHaveText("Starting…");
   await expect(start).toBeDisabled();
   await desk.evaluate(rows => window.desk.send({ type: "sessions", sessions: rows }),
-    [LIVE[0], { ...LIVE[1], state: "idle", live: true, canType: true, canResume: false }]);
+    [LIVE[0], sessionRow("session-2", "docs", "idle")]);
   await expect(start).toBeHidden();
   await expect(phone.locator(".prompt-input")).toBeEnabled();
 });
@@ -320,10 +384,10 @@ test("buzzes when a session starts needing you, and can be switched off from the
     Object.defineProperty(navigator, "vibrate", { configurable: true, value: pattern => { window.buzzes.push(pattern); return true; } });
   });
   const { desk, phone } = await paired(context, LIVE);
-  const list = (states, pending = []) => desk.evaluate(([st, pe]) => window.desk.send({ type: "sessions", sessions: [
-    { id: "session-1", name: "parser-work", state: st[0], live: true, canType: true, pending: pe.includes("session-1"), canResume: false },
-    { id: "session-2", name: "docs", state: st[1], live: true, canType: true, pending: pe.includes("session-2"), canResume: false },
-  ] }), [states, pending]);
+  const list = (states, pending = []) => desk.evaluate(s => window.desk.send({ type: "sessions", sessions: s }), [
+    sessionRow("session-1", "parser-work", states[0], { pending: pending.includes("session-1") }),
+    sessionRow("session-2", "docs", states[1], { pending: pending.includes("session-2") }),
+  ]);
   const buzzes = () => phone.evaluate(() => window.buzzes);
   expect(await buzzes(), "nothing new needed you on connecting").toEqual([]);
 
@@ -351,7 +415,7 @@ test("buzzes when a session starts needing you, and can be switched off from the
 test("marks the sessions that started needing you since you last looked, buzz or not", async ({ context }) => {
   // An iPhone, say: no vibrate, but the marks still show.
   await context.addInitScript(() => { delete Navigator.prototype.vibrate; });
-  const session = (id, name, st, pending = false) => ({ id, name, state: st, live: true, canType: true, pending, canResume: false });
+  const session = (id, name, st, pending = false) => sessionRow(id, name, st, { pending });
   const { desk, phone } = await paired(context, [session("session-1", "parser-work", "idle"), session("session-2", "docs", "waiting")]);
   const list = (states, pending = []) => desk.evaluate(s => window.desk.send({ type: "sessions", sessions: s }), [
     session("session-1", "parser-work", states[0], pending.includes("session-1")),
@@ -391,9 +455,7 @@ test("marks the sessions that started needing you since you last looked, buzz or
   await expect(phone.locator(".menu-button"), "the rows show it on the list").not.toHaveAttribute("data-unseen", "1");
 
   // A session that's gone from the list takes its mark with it.
-  await desk.evaluate(() => window.desk.send({ type: "sessions", sessions: [
-    { id: "session-1", name: "parser-work", state: "idle", live: true, canType: true, pending: false, canResume: false },
-  ] }));
+  await desk.evaluate(s => window.desk.send({ type: "sessions", sessions: s }), [sessionRow("session-1", "parser-work", "idle")]);
   await expect(phone.locator(".session-list li")).toHaveCount(1);
   await openFirst(phone, desk);
   await phone.locator(".menu-button").click();
@@ -408,9 +470,7 @@ test("marks the open session when it needs you while the page is off screen", as
     document.dispatchEvent(new Event("visibilitychange"));
   }, v);
   await setVisible(false);
-  await desk.evaluate(() => window.desk.send({ type: "sessions", sessions: [
-    { id: "session-1", name: "parser-work", state: "waiting", live: true, canType: true, pending: false, canResume: false },
-  ] }));
+  await desk.evaluate(s => window.desk.send({ type: "sessions", sessions: s }), [sessionRow("session-1", "parser-work", "waiting")]);
   await expect.poll(() => phone.evaluate(() => document.querySelector(".session-list li")?.dataset.unseen)).toBe("1");
   // Back on screen, still in that session: now it's seen.
   await setVisible(true);
@@ -446,7 +506,7 @@ test("shows Claude's bold, code and code blocks, and nothing else as markup", as
   const { desk, phone } = await paired(context, LIVE);
   await openFirst(phone, desk);
   await desk.evaluate(text => window.desk.send({ type: "conversation", sessionId: "session-1", mtimeMs: Date.now(),
-    entries: [{ kind: "turn", prompt: "Check it", items: [{ kind: "text", text }] }] }),
+    entries: [{ kind: "turn", index: 0, prompt: "Check it", items: [{ kind: "text", text }] }] }),
   "Run **npm test** then `git status`, not <b>this</b>.\n```sh\nnpm ci\nnpm test\n```\nDone.");
   const reply = phone.locator(".chat .claude").first();
   await expect(reply.locator("strong")).toHaveText("npm test");
@@ -460,7 +520,7 @@ test("shows bold that holds code, and leaves asterisks inside code alone", async
   const { desk, phone } = await paired(context, LIVE);
   await openFirst(phone, desk);
   await desk.evaluate(text => window.desk.send({ type: "conversation", sessionId: "session-1", mtimeMs: Date.now(),
-    entries: [{ kind: "turn", prompt: "Check it", items: [{ kind: "text", text }] }] }),
+    entries: [{ kind: "turn", index: 0, prompt: "Check it", items: [{ kind: "text", text }] }] }),
   "**Edit `src/app.js` first**, then run `a ** b` and `**not bold**`.");
   const reply = phone.locator(".chat .claude").first();
   const strong = reply.locator("strong");
@@ -518,7 +578,7 @@ test("leaves room between the end of the chat and the prompt box", async ({ cont
   const { desk, phone } = await paired(context, LIVE);
   await openFirst(phone, desk);
   await desk.evaluate(() => window.desk.send({ type: "conversation", sessionId: "session-1", mtimeMs: Date.now() - 60_000,
-    entries: Array.from({ length: 30 }, (_, n) => ({ kind: "turn", prompt: `Prompt ${n}`, items: [{ kind: "text", text: "Done." }] })) }));
+    entries: Array.from({ length: 30 }, (_, n) => ({ kind: "turn", index: n, prompt: `Prompt ${n}`, items: [{ kind: "text", text: "Done." }] })) }));
   await expect(phone.locator(".since")).toBeVisible();
   await phone.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
   const since = await phone.locator(".since").boundingBox();
@@ -537,7 +597,7 @@ test("says how long since Claude's last reply once things go quiet", async ({ co
   await openFirst(phone, desk);
   const since = phone.locator(".since");
   const reply = text => desk.evaluate(t => window.desk.send({ type: "conversation", sessionId: "session-1", mtimeMs: Date.now(),
-    entries: [{ kind: "turn", prompt: "Go", items: [{ kind: "text", text: t }] }] }), text);
+    entries: [{ kind: "turn", index: 0, prompt: "Go", items: [{ kind: "text", text: t }] }] }), text);
   await reply("First.");
   await expect(phone.locator(".chat .claude")).toHaveText("First.");
   await expect(since).toBeHidden();
@@ -665,8 +725,8 @@ test("jumps up to the start of Claude's last reply, and down to the end", async 
   const long = Array.from({ length: 80 }, (_, n) => `Line ${n} of the last response.`).join("\n");
   await desk.evaluate(last => window.desk.send({ type: "conversation", sessionId: "session-1", mtimeMs: Date.now(),
     entries: [
-      ...Array.from({ length: 20 }, (_, n) => ({ kind: "turn", prompt: `Prompt ${n}`, items: [{ kind: "text", text: "Done." }] })),
-      { kind: "turn", prompt: "Explain it", items: [
+      ...Array.from({ length: 20 }, (_, n) => ({ kind: "turn", index: n, prompt: `Prompt ${n}`, items: [{ kind: "text", text: "Done." }] })),
+      { kind: "turn", index: 20, prompt: "Explain it", items: [
         { kind: "text", text: last }, { kind: "tools", labels: ["Read a file"] }, { kind: "text", text: "All done." },
       ] },
     ] }), long);

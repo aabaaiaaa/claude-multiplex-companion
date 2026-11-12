@@ -22,8 +22,8 @@ Every connection starts with it, and neither side reads anything else first.
    from now on. The page checks the proof before it trusts anything, then sends `hello`.
 
 A wrong, spent or expired code gets `goodbye` `refused`. `auth.js` holds the code, and
-`authVector` in the fixtures is a known answer both sides test against. An app that sends no
-`challenge` predates the check, and the page asks for it to be updated.
+`authVector` in the fixtures is a known answer both sides test against. With no `challenge`
+within 8 s the page connects again, as for any stalled connection.
 
 ## Page → app
 
@@ -46,8 +46,8 @@ A wrong, spent or expired code gets `goodbye` `refused`. `auth.js` holds the cod
 |---|---|
 | `challenge` | `nonce`: see *The pairing check* |
 | `authed` | `proof`, and `deviceKey` after a `"pair"`: see *The pairing check* |
-| `welcome` | `deviceId`, `appVersion`: the app's version, such as `"0.25.0"`; apps before 0.25.0 leave it out |
-| `sessions` | `sessions: [{id, name, state, live, canType, pending, canResume}]` |
+| `welcome` | `deviceId`, `appVersion`: the app's version, such as `"0.25.0"`, or empty if the app couldn't read it |
+| `sessions` | `sessions: [{id, name, state, live, canType, pending, canResume, status, detail, awaiting, group}]`, in the app's sidebar order. `status` is what the app's sidebar says (`"your turn"`, `"waiting on 2 agents"`), `detail` what's still running (`"Still running: 1 agent"`, or empty), `awaiting` whether it's your turn, and `group` the sidebar group the row is in (`"Awaiting input"`, or a folder name when the sidebar groups by folder) |
 | `conversation` | `sessionId`, `mtimeMs`, `entries: [{kind:"turn", index, prompt?, items: [{kind:"text",text} \| {kind:"tools",labels}]}]`, `hasEarlier`. The entries are a window that rolls forward: the last hour's turns, at least the latest 5 and at most 30. `index` is the transcript's turn number. `hasEarlier` says there are turns before the window |
 | `earlier` | `sessionId`, `before`, `entries`: up to 10 turns before turn `before`, `hasEarlier`: there are more before those |
 | `prompt` | `sessionId`, `card`: a permission card `{id, kind:"permission", toolName, summary, options:[{label}]}`, a question card `{id, kind:"question", questions:[{header, question, multiSelect, options:[{label, description?}]}]}`, the app's own question `{id, kind:"confirm", title, body, options:[{label}]}` (such as the over-budget reminder before it starts a session; the first option goes ahead), or `null` once it's answered |
@@ -58,7 +58,7 @@ A wrong, spent or expired code gets `goodbye` `refused`. `auth.js` holds the cod
 ## Versions
 
 One page serves every app, so the page says which apps it works with: `MIN_DESKTOP_VERSION` in
-`desktop-version.js`. On `welcome`, an app older than that, or one that sends no `appVersion`, gets
+`desktop-version.js`. On `welcome`, an app older than that, or one whose version is empty, gets
 a `disconnect`, and the page asks for the app to be updated. Raise the minimum whenever the page
 starts relying on something only a newer app sends, and leave it where it is otherwise.
 

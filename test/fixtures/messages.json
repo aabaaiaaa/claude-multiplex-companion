@@ -117,7 +117,11 @@
           "live": true,
           "canType": false,
           "pending": true,
-          "canResume": false
+          "canResume": false,
+          "status": "your turn",
+          "detail": "",
+          "awaiting": true,
+          "group": "Awaiting input"
         },
         {
           "id": "session-2",
@@ -126,7 +130,11 @@
           "live": false,
           "canType": false,
           "pending": false,
-          "canResume": true
+          "canResume": true,
+          "status": "stopped",
+          "detail": "",
+          "awaiting": false,
+          "group": "Resumable"
         }
       ]
     },
