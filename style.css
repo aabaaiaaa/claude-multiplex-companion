@@ -132,6 +132,9 @@ main { padding: 12px 16px 24px; }
   background: var(--panel); border: 1px solid var(--border); border-radius: 4px;
 }
 .claude code { padding: 0 4px; }
+/* A reference to an image the app can send: it reads as a link, with its code styling kept inside. */
+.image-ref { font: inherit; color: var(--accent); background: none; border: 0; padding: 0; text-decoration: underline; cursor: pointer; }
+.image-ref code { color: inherit; }
 .code-block { margin: 4px 0; padding: 8px; overflow-x: auto; white-space: pre; }
 .code-block code { font: inherit; background: none; border: 0; padding: 0; }
 /* A Markdown table. Wider than the screen, it scrolls sideways on its own, not the page. */

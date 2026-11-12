@@ -23,6 +23,8 @@
     refuse: false,
     /** What the app reports in welcome; null leaves it out, as apps before 0.25.0 do. */
     appVersion: "0.25.0",
+    /** What the app lets the phone do, as welcome says; "images" when its sharing setting is on. */
+    features: [],
     /** The QR code's secret; the helpers put the same one in the phone's link. */
     code: params.get("code"),
     /** What the phone that paired was given, for its reconnects. */
@@ -84,7 +86,7 @@
         return;
       }
       if (m.type === "hello") {
-        c.send({ v: 1, type: "welcome", deviceId: m.clientId, appVersion: desk.appVersion });
+        c.send({ v: 1, type: "welcome", deviceId: m.clientId, appVersion: desk.appVersion, features: desk.features });
         c.send({ v: 1, type: "sessions", sessions: desk.sessions });
       }
       if (m.type === "disconnect") {

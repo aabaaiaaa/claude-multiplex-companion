@@ -1,0 +1,20 @@
+{
+  "cases": [
+    { "text": "See `C:\\a\\shots\\far-side.png`.", "refs": ["C:\\a\\shots\\far-side.png"] },
+    {
+      "text": "From `day-floor.png`, `before.png` and `on.png` in `C:\\a\\shots\\`.",
+      "refs": ["day-floor.png", "before.png", "on.png"]
+    },
+    { "text": "Open [the shot](C:\\a\\x.PNG) now.", "refs": ["C:\\a\\x.PNG"] },
+    {
+      "text": "Open [it](<C:\\Users\\me\\OneDrive - Work\\shots (2)\\é.png>).",
+      "refs": ["C:\\Users\\me\\OneDrive - Work\\shots (2)\\é.png"]
+    },
+    { "text": "`C:\\a\\notes.svg` and `C:\\a\\run.log`", "refs": [] },
+    { "text": "```\n`C:\\a\\in-fence.png`\n```", "refs": [] },
+    { "text": "https://example.test/x.png and a bare C:\\a\\bare.png", "refs": [] },
+    { "text": "`shots\\rel.jpeg`", "refs": ["shots\\rel.jpeg"] },
+    { "text": "See `https://h.test/x.png` and `file:///a/b.png`.", "refs": [] },
+    { "text": "Open [x](https://h.test/x.png) or [y](http://h.test/y.jpg).", "refs": [] }
+  ]
+}

@@ -46,6 +46,8 @@ const state = {
   lastActiveAt: 0,
   /** Sessions that started needing you since you last looked at them on this page. */
   unseen: new Set(),
+  /** Whether the app lets this phone open images; it says so in welcome, and again if that changes. */
+  images: false,
 };
 
 function el(tag, cls, text) {
@@ -220,7 +222,8 @@ function renderChat({ keepPlace = false } = {}) {
     for (const item of turn.items) {
       if (item.kind === "text") {
         const text = el("div", "claude");
-        text.append(...formatText(item.text));
+        text.dataset.turn = String(turn.index);
+        text.append(...formatText(item.text, { images: state.images }));
         chat.append(text);
       }
       else if (item.kind === "tools") {
@@ -244,6 +247,15 @@ function renderChat({ keepPlace = false } = {}) {
   if (keepPlace) window.scrollBy(0, document.documentElement.scrollHeight - heightBefore);
   else if (nearBottom) window.scrollTo(0, document.body.scrollHeight);
   renderJumps();
+}
+
+/** Takes the app's list of what it lets this phone do; a change redraws the chat, so the
+ *  image buttons appear or go. */
+function setImages(features) {
+  const images = Array.isArray(features) && features.includes("images");
+  if (images === state.images) return;
+  state.images = images;
+  if (state.openId) renderChat({ keepPlace: true });
 }
 
 /** A new live window. Back at the end, the earlier turns go and the chat rolls on; scrolled up
@@ -754,11 +766,15 @@ function onMessage(m) {
       if (m.sessionId === state.openId) renderComposer();
       break;
     case "welcome":
+      setImages(m.features);
       if (desktopTooOld(m.appVersion)) {
         const has = typeof m.appVersion === "string" && m.appVersion ? `version ${m.appVersion}` : "a version it doesn't say";
         $(".outdated-text").textContent = `This page needs claude-multiplex ${MIN_DESKTOP_VERSION} or later, and the app on your computer is ${has}. Update the app, then pair again from its phone button (📱).`;
         connection.disconnect("outdated");
       }
+      break;
+    case "features":
+      setImages(m.features);
       break;
     case "usage":
       renderUsage(m.usage);

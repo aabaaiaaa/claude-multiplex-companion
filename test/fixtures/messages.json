@@ -86,6 +86,19 @@
       "choice": {
         "kind": "reject"
       }
+    },
+    {
+      "v": 1,
+      "type": "openImage",
+      "id": "img-1",
+      "sessionId": "session-1",
+      "turn": 2,
+      "ref": "C:\\work\\shots\\far-side.png"
+    },
+    {
+      "v": 1,
+      "type": "cancelImage",
+      "id": "img-1"
     }
   ],
   "appToPhone": [
@@ -104,7 +117,17 @@
       "v": 1,
       "type": "welcome",
       "deviceId": "phone-7f3a",
-      "appVersion": "0.25.0"
+      "appVersion": "0.25.0",
+      "features": [
+        "images"
+      ]
+    },
+    {
+      "v": 1,
+      "type": "features",
+      "features": [
+        "images"
+      ]
     },
     {
       "v": 1,
@@ -281,6 +304,29 @@
         "dailyUsd": 12.4,
         "level": "ok"
       }
+    },
+    {
+      "v": 1,
+      "type": "image",
+      "id": "img-1",
+      "sessionId": "session-1",
+      "ref": "C:\\work\\shots\\far-side.png",
+      "mime": "image/png",
+      "size": 123456,
+      "pieces": 2
+    },
+    {
+      "v": 1,
+      "type": "image",
+      "id": "img-2",
+      "sessionId": "session-1",
+      "ref": "C:\\work\\shots\\missing.png",
+      "error": "not-found"
+    },
+    {
+      "v": 1,
+      "type": "imageDone",
+      "id": "img-1"
     }
   ],
   "authVector": {

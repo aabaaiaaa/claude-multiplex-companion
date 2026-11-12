@@ -25,23 +25,77 @@ function element(tag, text, cls) {
   return e;
 }
 
-const code = text => split(text, CODE, t => element("code", t), t => [document.createTextNode(t)]);
+const plainCode = text => split(text, CODE, t => element("code", t), t => [document.createTextNode(t)]);
+
+// What can hold an image reference: a code span, or a link whose target is <...> (may hold spaces
+// and a closing bracket) or bare (runs to the next closing bracket). Groups: code, link text,
+// angled target, bare target. The same rule as the app's, tested against fixtures/image_refs.json.
+const SPAN_OR_LINK = /`([^`\n]+)`|\[([^\]\n]*)\]\((?:<([^>\n]*)>|([^)\n]*))\)/g;
+const IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"];
+const URL_SCHEME = /^[a-z][a-z0-9+.-]*:\/\//i;
+
+function isImageRef(c) {
+  const lower = c.toLowerCase();
+  return IMAGE_EXTENSIONS.some(ext => lower.endsWith(ext)) && !URL_SCHEME.test(c);
+}
+
+function imageButton(ref) {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.className = "image-ref";
+  b.dataset.ref = ref;
+  return b;
+}
+
+/** Like `plainCode`, but a code span or link that names an image becomes a button. */
+function withImages(text) {
+  const out = [];
+  let at = 0;
+  for (const m of text.matchAll(SPAN_OR_LINK)) {
+    if (m.index > at) out.push(document.createTextNode(text.slice(at, m.index)));
+    at = m.index + m[0].length;
+    if (m[1] !== undefined) {
+      if (isImageRef(m[1])) {
+        const b = imageButton(m[1]);
+        b.append(element("code", m[1]));
+        out.push(b);
+      } else {
+        out.push(element("code", m[1]));
+      }
+      continue;
+    }
+    const target = m[3] ?? m[4];
+    if (target && isImageRef(target)) {
+      const b = imageButton(target);
+      b.append(...inline(m[2]));
+      out.push(b);
+    } else {
+      out.push(...inline(m[0]));
+    }
+  }
+  if (at < text.length) out.push(document.createTextNode(text.slice(at)));
+  return out;
+}
+
+const code = (text, images) => (images ? withImages(text) : plainCode(text));
 
 /** Bold and code, where bold can hold code (`**the `x` file**`) but code never holds bold. */
-function inline(text) {
+function inline(text, images = false) {
   // Bold is found with each code span blanked out, so a `*` inside code is never a marker and
-  // every match starts and ends outside code.
-  const masked = text.replace(CODE, m => `\`${"x".repeat(m.length - 2)}\``);
+  // every match starts and ends outside code. With images, links are blanked too, so bold never
+  // straddles a button's edge.
+  const masked = text.replace(images ? SPAN_OR_LINK : CODE,
+    m => (m[0] === "`" ? `\`${"x".repeat(m.length - 2)}\`` : "x".repeat(m.length)));
   const out = [];
   let at = 0;
   for (const m of masked.matchAll(BOLD)) {
-    if (m.index > at) out.push(...code(text.slice(at, m.index)));
+    if (m.index > at) out.push(...code(text.slice(at, m.index), images));
     const strong = document.createElement("strong");
-    strong.append(...code(text.slice(m.index + 2, m.index + m[0].length - 2)));
+    strong.append(...code(text.slice(m.index + 2, m.index + m[0].length - 2), images));
     out.push(strong);
     at = m.index + m[0].length;
   }
-  if (at < text.length) out.push(...code(text.slice(at)));
+  if (at < text.length) out.push(...code(text.slice(at), images));
   return out;
 }
 
@@ -81,7 +135,7 @@ function alignment(divider) {
 
 /** A Markdown table: a header line, a divider, then its rows. Scrolls sideways on its own when
  *  wider than the screen, so the page never does. */
-function table(lines) {
+function table(lines, images) {
   const head = cells(lines[0]);
   const aligns = cells(lines[1]).map(alignment);
   const t = document.createElement("table");
@@ -90,7 +144,7 @@ function table(lines) {
     head.forEach((_, i) => {
       const cell = document.createElement(tag);
       if (aligns[i]) cell.style.textAlign = aligns[i];
-      cell.append(...inline(texts[i] ?? ""));
+      cell.append(...inline(texts[i] ?? "", images));
       tr.append(cell);
     });
     return tr;
@@ -107,12 +161,12 @@ function table(lines) {
 }
 
 /** Text outside code blocks: tables as tables, everything else as lines of bold and code. */
-function blocks(text) {
+function blocks(text, images) {
   const lines = text.split("\n");
   const out = [];
   let plain = [];
   const flush = () => {
-    if (plain.length) out.push(...inline(plain.join("\n")));
+    if (plain.length) out.push(...inline(plain.join("\n"), images));
     plain = [];
   };
   for (let i = 0; i < lines.length; i++) {
@@ -124,7 +178,7 @@ function blocks(text) {
       // The line break before the table belongs to the table, not the text above it.
       if (plain.length && plain.at(-1) === "") plain.pop();
       flush();
-      out.push(table(lines.slice(i, end)));
+      out.push(table(lines.slice(i, end), images));
       i = end - 1;
       // Nor the one after it.
       if (lines[end] === "") i = end;
@@ -136,12 +190,13 @@ function blocks(text) {
   return out;
 }
 
-/** The nodes that show `text` with its formatting applied. */
-export function formatText(text) {
+/** The nodes that show `text` with its formatting applied. `images`: a reference to an image
+ *  becomes a button to open it. */
+export function formatText(text, { images = false } = {}) {
   return split(text, FENCE, t => {
     const pre = document.createElement("pre");
     pre.className = "code-block";
     pre.append(element("code", t));
     return pre;
-  }, blocks);
+  }, t => blocks(t, images));
 }
