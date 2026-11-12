@@ -33,10 +33,12 @@ const plainCode = text => split(text, CODE, t => element("code", t), t => [docum
 const SPAN_OR_LINK = /`([^`\n]+)`|\[([^\]\n]*)\]\((?:<([^>\n]*)>|([^)\n]*))\)/g;
 const IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"];
 const URL_SCHEME = /^[a-z][a-z0-9+.-]*:\/\//i;
+// What the app never reads: anything led by `\` (no drive, network or device), `//` or `/??/`.
+const NOT_LOCAL = /^(?:\\|\/\/|\/\?\?\/)/;
 
 function isImageRef(c) {
   const lower = c.toLowerCase();
-  return IMAGE_EXTENSIONS.some(ext => lower.endsWith(ext)) && !URL_SCHEME.test(c);
+  return IMAGE_EXTENSIONS.some(ext => lower.endsWith(ext)) && !URL_SCHEME.test(c) && !NOT_LOCAL.test(c);
 }
 
 function imageButton(ref) {

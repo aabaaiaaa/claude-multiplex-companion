@@ -19,6 +19,9 @@
     { "text": "https://example.test/x.png and a bare C:\\a\\bare.png", "refs": [] },
     { "text": "`shots\\rel.jpeg`", "refs": ["shots\\rel.jpeg"] },
     { "text": "See `https://h.test/x.png` and `file:///a/b.png`.", "refs": [] },
-    { "text": "Open [x](https://h.test/x.png) or [y](http://h.test/y.jpg).", "refs": [] }
+    { "text": "Open [x](https://h.test/x.png) or [y](http://h.test/y.jpg).", "refs": [] },
+    { "text": "Not `\\\\?\\GLOBALROOT\\Device\\Mup\\h\\s\\x.png`, `\\??\\UNC\\h\\s\\y.png` or `\\\\.\\pipe\\z.png`.", "refs": [] },
+    { "text": "Nor `\\\\h\\share\\u.png`, `//h/share/v.png`, `/??/UNC/h/s/w.png` or `\\rooted.png`.", "refs": [] },
+    { "text": "But `/srv/ok.png` is.", "refs": ["/srv/ok.png"] }
   ]
 }
