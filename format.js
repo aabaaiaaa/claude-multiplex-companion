@@ -10,11 +10,11 @@ function split(text, re, match, plain) {
   const out = [];
   let at = 0;
   for (const m of text.matchAll(re)) {
-    if (m.index > at) out.push(...plain(text.slice(at, m.index)));
+    if (m.index > at) out.push(...plain(text.slice(at, m.index), at));
     out.push(match(m[1]));
     at = m.index + m[0].length;
   }
-  if (at < text.length) out.push(...plain(text.slice(at)));
+  if (at < text.length) out.push(...plain(text.slice(at), at));
   return out;
 }
 
@@ -160,13 +160,30 @@ function table(lines, images) {
   return wrap;
 }
 
-/** Text outside code blocks: tables as tables, everything else as lines of bold and code. */
-function blocks(text, images) {
+/** For each line of `text`, whether the app's scan for image references counts it as fenced: a
+ *  line starting with three backticks opens or closes a fence (and is part of it), and an unclosed
+ *  one runs to the end. Indented or mid-line backticks don't count. */
+function fencedLines(text) {
+  let inFence = false;
+  return text.split("\n").map(line => {
+    if (line.startsWith("```")) {
+      inFence = !inFence;
+      return true;
+    }
+    return inFence;
+  });
+}
+
+/** Text outside code blocks: tables as tables, everything else as lines of bold and code.
+ *  `hidden`, with images on: per line, whether the app's scan counts it as fenced (no buttons). */
+function blocks(text, hidden) {
   const lines = text.split("\n");
   const out = [];
+  const shown = i => !!hidden && !hidden[i];
   let plain = [];
+  let plainShown = false;
   const flush = () => {
-    if (plain.length) out.push(...inline(plain.join("\n"), images));
+    if (plain.length) out.push(...inline(plain.join("\n"), plainShown));
     plain = [];
   };
   for (let i = 0; i < lines.length; i++) {
@@ -178,12 +195,14 @@ function blocks(text, images) {
       // The line break before the table belongs to the table, not the text above it.
       if (plain.length && plain.at(-1) === "") plain.pop();
       flush();
-      out.push(table(lines.slice(i, end), images));
+      out.push(table(lines.slice(i, end), shown(i)));
       i = end - 1;
       // Nor the one after it.
       if (lines[end] === "") i = end;
       continue;
     }
+    if (plain.length && shown(i) !== plainShown) flush();
+    plainShown = shown(i);
     plain.push(lines[i]);
   }
   flush();
@@ -193,10 +212,12 @@ function blocks(text, images) {
 /** The nodes that show `text` with its formatting applied. `images`: a reference to an image
  *  becomes a button to open it. */
 export function formatText(text, { images = false } = {}) {
+  const hidden = images ? fencedLines(text) : [];
+  const lineAt = at => text.slice(0, at).split("\n").length - 1;
   return split(text, FENCE, t => {
     const pre = document.createElement("pre");
     pre.className = "code-block";
     pre.append(element("code", t));
     return pre;
-  }, t => blocks(t, images));
+  }, (t, at) => blocks(t, images ? hidden.slice(lineAt(at)) : null));
 }
