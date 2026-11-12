@@ -12,8 +12,9 @@ function sessionRow(id, name, state, extra = {}) {
     canResume: state === "resumable", detail: "", ...extra,
   };
   const awaiting = base.pending || state === "attention" || (state === "waiting" && !base.detail);
-  const group = awaiting ? "Awaiting input" : { idle: "Idle", resumable: "Resumable" }[state] ?? "Processing";
-  return { status: STATUS[state], awaiting, group, ...base };
+  const groupKey = awaiting ? "awaiting" : { idle: "idle", resumable: "resumable" }[state] ?? "processing";
+  const group = { awaiting: "Awaiting input", processing: "Processing", idle: "Idle", resumable: "Resumable" }[groupKey];
+  return { status: STATUS[state], awaiting, group, groupKey, ...base };
 }
 
 const LIVE = [sessionRow("session-1", "parser-work", "idle"), sessionRow("session-2", "docs", "resumable")];
@@ -67,9 +68,9 @@ test("shows the sessions in the app's sidebar groups and order, each group with 
   await expect(groups.nth(2).locator("li .name")).toHaveText(["docs", "notes"]);
   // Grouped by folder at the PC instead: the app's folder names head the groups.
   await desk.evaluate(s => window.desk.send({ type: "sessions", sessions: s }), [
-    sessionRow("s-a", "review", "attention", { group: "app" }),
-    sessionRow("s-c", "build", "processing", { group: "app" }),
-    sessionRow("s-b", "parser-work", "waiting", { group: "parser" }),
+    sessionRow("s-a", "review", "attention", { group: "app", groupKey: "app" }),
+    sessionRow("s-c", "build", "processing", { group: "app", groupKey: "app" }),
+    sessionRow("s-b", "parser-work", "waiting", { group: "parser", groupKey: "parser" }),
   ]);
   await expect(groups.locator(".session-group-label")).toHaveText(["app (2)", "parser (1)"]);
   // Opening a row still works from inside its group.
@@ -528,6 +529,72 @@ test("shows bold that holds code, and leaves asterisks inside code alone", async
   await expect(strong).toHaveText("Edit src/app.js first");
   await expect(strong.locator("code")).toHaveText("src/app.js");
   await expect(reply.locator(":scope > code")).toHaveText(["a ** b", "**not bold**"]);
+});
+
+/** Shows `text` as Claude's reply in the open session, and returns the reply. */
+async function reply(context, text) {
+  const { desk, phone } = await paired(context, LIVE);
+  await openFirst(phone, desk);
+  await desk.evaluate(t => window.desk.send({ type: "conversation", sessionId: "session-1", mtimeMs: Date.now(),
+    entries: [{ kind: "turn", index: 0, prompt: "Check it", items: [{ kind: "text", text: t }] }] }), text);
+  return { phone, reply: phone.locator(".chat .claude").first() };
+}
+
+test("shows a Markdown table as a table, with the text around it", async ({ context }) => {
+  const { reply: r } = await reply(context, [
+    "Timings, **before and after**:",
+    "",
+    "| View | Before | After |",
+    "|---|---:|:---:|",
+    "| On the pad (9 readings each, mean) | 3.9 ms | **3.4 ms** |",
+    "| On the moon looking at the planet (18 readings each, median) | 3.0 ms | `3.0 ms` |",
+    "",
+    "Both are within noise.",
+  ].join("\n"));
+  const table = r.locator(".table-wrap table");
+  await expect(table).toHaveCount(1);
+  await expect(table.locator("thead th")).toHaveText(["View", "Before", "After"]);
+  await expect(table.locator("tbody tr")).toHaveCount(2);
+  await expect(table.locator("tbody tr").first().locator("td")).toHaveText(["On the pad (9 readings each, mean)", "3.9 ms", "3.4 ms"]);
+  // Bold and code inside cells, and each column's alignment from its divider.
+  await expect(table.locator("tbody tr").first().locator("td strong")).toHaveText("3.4 ms");
+  await expect(table.locator("tbody tr").nth(1).locator("td code")).toHaveText("3.0 ms");
+  expect(await table.locator("thead th").evaluateAll(ths => ths.map(th => getComputedStyle(th).textAlign)))
+    .toEqual(["left", "right", "center"]);
+  // The text either side stays, without the table's pipes.
+  await expect(r.locator("strong").first()).toHaveText("before and after");
+  await expect(r).toContainText("Both are within noise.");
+  expect(await r.evaluate(e => e.textContent.includes("|---"))).toBe(false);
+});
+
+test("shows an escaped pipe in a table cell as a pipe, not a new column", async ({ context }) => {
+  const { reply: r } = await reply(context, "| Flag | Means |\n|---|---|\n| `a \\| b` | either one |\n| -v | verbose |");
+  const rows = r.locator("table tbody tr");
+  await expect(rows).toHaveCount(2);
+  await expect(rows.first().locator("td")).toHaveText(["a | b", "either one"]);
+  await expect(rows.nth(1).locator("td")).toHaveText(["-v", "verbose"]);
+});
+
+test("leaves pipes alone when they aren't a table", async ({ context }) => {
+  const { reply: r } = await reply(context, "Run `a | b`, or pick one | two.\n| not | a table |\nno divider line here");
+  await expect(r.locator("table")).toHaveCount(0);
+  await expect(r).toContainText("pick one | two.");
+  await expect(r).toContainText("| not | a table |");
+});
+
+test("scrolls a table wider than the screen on its own, not the page", async ({ context }) => {
+  const wide = Array.from({ length: 12 }, (_, n) => `Column number ${n}`);
+  const { phone, reply: r } = await reply(context, [
+    `| ${wide.join(" | ")} |`,
+    `|${wide.map(() => "---").join("|")}|`,
+    `| ${wide.map((_, n) => `value ${n}`).join(" | ")} |`,
+  ].join("\n"));
+  const wrap = r.locator(".table-wrap");
+  await expect(wrap.locator("th")).toHaveCount(12);
+  expect(await wrap.evaluate(w => w.scrollWidth > w.clientWidth), "the table scrolls within its box").toBe(true);
+  expect(await phone.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), "the page doesn't").toBe(true);
+  // A word stays whole in its cell.
+  expect(await wrap.locator("th").first().evaluate(th => th.getClientRects().length)).toBe(1);
 });
 
 test("makes the text smaller or larger from the menu, and remembers it", async ({ context }) => {

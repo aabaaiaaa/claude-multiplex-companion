@@ -15,7 +15,7 @@ to the start of Claude's last response and to the end of the chat.
 
 The menu (☰) goes back to the sessions, keeps the screen on while the page is open, switches
 off the buzz, sets the text size, shows the connection details, disconnects, and offers a newer version of this page
-once one is deployed. Claude's `code`, code blocks and
+once one is deployed. Claude's `code`, code blocks, tables and
 **bold** show formatted. The prompt box grows as you type. Once nothing has happened for 10
 seconds, the chat says how long ago Claude last replied.
 

@@ -82,7 +82,7 @@ const openRow = () => state.sessions.find(s => s.id === state.openId);
 function grouped(sessions) {
   const groups = [];
   for (const s of sessions) {
-    if (groups.at(-1)?.label !== s.group) groups.push({ label: s.group, sessions: [] });
+    if (groups.at(-1)?.key !== s.groupKey) groups.push({ key: s.groupKey, label: s.group, sessions: [] });
     groups.at(-1).sessions.push(s);
   }
   return groups;
