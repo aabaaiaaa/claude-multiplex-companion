@@ -8,7 +8,8 @@ straight to the app. From the page you can:
   earlier turns fetched as you scroll up, and dropped again once you're back at the end;
 - type prompts, which show faded until Claude has them;
 - answer Claude's permission prompts and questions;
-- start a session that isn't running.
+- start a session that isn't running;
+- tap an image Claude names to open it, when the app's image sharing setting is on.
 
 The top bar shows today's spend as a share of today's budget. Arrows above the prompt box jump
 to the start of Claude's last response and to the end of the chat.

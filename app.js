@@ -1,6 +1,8 @@
 import { Connection } from "./connection.js";
 import { desktopTooOld, MIN_DESKTOP_VERSION } from "./desktop-version.js";
 import { formatText } from "./format.js";
+import { imagesComposerChanged, imagesStatus, requestImage, setupImages, takeImageMessage } from "./images.js";
+import { closeViewer } from "./viewer.js";
 import { BUILD_INFO } from "./version.js";
 
 const $ = sel => document.querySelector(sel);
@@ -458,17 +460,23 @@ function renderCard(card) {
   if (state.answered.has(card.id)) for (const b of box.querySelectorAll("button, input")) b.disabled = true;
 }
 
-function renderComposer() {
+/** Why the open session can't take a prompt now, or "" when it can. */
+function promptBlock() {
   const row = openRow();
-  const card = state.cards.get(state.openId) ?? null;
-  renderCard(card);
-  const reason = card
+  return state.cards.has(state.openId)
     ? "Answer the prompt above first."
     : !row?.live
       ? (row?.canResume ? "This session isn't running. Start it to carry on." : "This session isn't running in the app.")
       : !row.canType
         ? "Answer the prompt in the app first."
         : "";
+}
+
+function renderComposer() {
+  const row = openRow();
+  const card = state.cards.get(state.openId) ?? null;
+  renderCard(card);
+  const reason = promptBlock();
   const canResume = !card && !row?.live && !!row?.canResume;
   $(".resume").hidden = !canResume;
   $(".resume").disabled = state.resuming === state.openId;
@@ -478,24 +486,37 @@ function renderComposer() {
   $(".send").disabled = !!reason;
   $(".prompt-reason").textContent = reason;
   $(".prompt-reason").hidden = !reason;
+  imagesComposerChanged();
 }
 
-$(".prompt-form").addEventListener("submit", e => {
-  e.preventDefault();
-  const input = $(".prompt-input");
-  const text = input.value.trim();
-  if (!text || !state.openId) return;
+/** Sends `text` to the open session, shown faded until Claude has it; false if it didn't go. */
+function submitPrompt(text) {
+  if (!text || !state.openId) return false;
   if (!connection.send({ type: "sendPrompt", sessionId: state.openId, text })) {
     toast(NOT_CONNECTED);
-    return;
+    return false;
   }
-  input.value = "";
-  fitInput();
   noteActivity();
   const ghosts = state.ghosts.get(state.openId) ?? [];
   ghosts.push({ text, after: newestIndex(state.entries), sentAt: Date.now() });
   state.ghosts.set(state.openId, ghosts);
   renderChat();
+  return true;
+}
+
+$(".prompt-form").addEventListener("submit", e => {
+  e.preventDefault();
+  const input = $(".prompt-input");
+  if (!submitPrompt(input.value.trim())) return;
+  input.value = "";
+  fitInput();
+});
+
+// A tap on an image Claude names opens it.
+$(".chat").addEventListener("click", e => {
+  const ref = e.target.closest(".image-ref");
+  if (!ref || !state.openId) return;
+  requestImage({ sessionId: state.openId, turn: Number(ref.closest(".claude")?.dataset.turn), ref: ref.dataset.ref });
 });
 
 $(".back").addEventListener("click", closeSession);
@@ -779,6 +800,11 @@ function onMessage(m) {
     case "usage":
       renderUsage(m.usage);
       break;
+    case "image":
+    case "imagePiece":
+    case "imageDone":
+      takeImageMessage(m);
+      break;
     case "error":
       dropRefusedGhost();
       state.resuming = null;
@@ -917,6 +943,7 @@ const connection = new Connection({
     s.textContent = STATUS_TEXT[status];
     s.dataset.status = status;
     state.status = status;
+    imagesStatus(status);
     renderMenu();
     renderLog();
     if (status === "unpaired") showScreen("unpaired");
@@ -929,6 +956,7 @@ const connection = new Connection({
   onMessage,
   onTrouble() { $(".trouble").hidden = false; },
   onEnded(reason) {
+    closeViewer();
     state.openId = null;
     renderSince();
     renderUsage(null);
@@ -964,7 +992,7 @@ setTextSize(SIZES.includes(savedSize) ? savedSize : 1, false);
 /** How often to look for a newer deploy while the page is open. */
 const UPDATE_CHECK_MS = 5 * 60_000;
 /** Everything the page loads from its own site, fetched afresh before reloading. */
-const PAGE_FILES = ["index.html", "app.js", "auth.js", "connection.js", "desktop-version.js", "format.js", "style.css", "version.js", "viewer.js"];
+const PAGE_FILES = ["index.html", "app.js", "auth.js", "connection.js", "desktop-version.js", "format.js", "images.js", "style.css", "version.js", "viewer.js"];
 
 /** The deployed version, read past the browser's cache; null if it can't be read. */
 async function deployedVersion() {
@@ -1010,4 +1038,5 @@ setInterval(checkForUpdate, UPDATE_CHECK_MS);
 checkForUpdate();
 
 $(".version").textContent = [BUILD_INFO.version, BUILD_INFO.date, `for claude-multiplex ${MIN_DESKTOP_VERSION}+`].filter(Boolean).join(" · ");
+setupImages({ send: m => connection.send(m), promptBlock, submitPrompt });
 connection.start();

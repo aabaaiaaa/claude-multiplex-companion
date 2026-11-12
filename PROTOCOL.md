@@ -39,6 +39,8 @@ within 8 s the page connects again, as for any stalled connection.
 | `sendPrompt` | `sessionId`, `text` |
 | `resumeSession` | `sessionId`: starts a session whose row has `canResume` |
 | `answer` | `sessionId`, `cardId`, `choice`: `{kind:"option",index}`, `{kind:"options",indices}` (multi-select, or one index per question), `{kind:"text",text}` or `{kind:"reject"}` |
+| `openImage` | `id`, a fresh random id for this request, `sessionId`, `turn`: the turn number the reference is in, `ref`: the reference as Claude wrote it. Only with the `images` capability. Any request still in flight is cancelled first |
+| `cancelImage` | `id`: stop sending that image; sent when the viewer closes while it loads, or before a newer `openImage` |
 
 ## App → page
 
@@ -46,7 +48,8 @@ within 8 s the page connects again, as for any stalled connection.
 |---|---|
 | `challenge` | `nonce`: see *The pairing check* |
 | `authed` | `proof`, and `deviceKey` after a `"pair"`: see *The pairing check* |
-| `welcome` | `deviceId`, `appVersion`: the app's version, such as `"0.25.0"`, or empty if the app couldn't read it |
+| `welcome` | `deviceId`, `appVersion`: the app's version, such as `"0.25.0"`, or empty if the app couldn't read it, `features`: what the app lets this phone do, see *Images* |
+| `features` | `features`: the same list as in `welcome`, sent again whenever it changes |
 | `sessions` | `sessions: [{id, name, state, live, canType, pending, canResume, status, detail, awaiting, group, groupKey}]`, in the app's sidebar order. `status` is what the app's sidebar says (`"your turn"`, `"waiting on 2 agents"`), `detail` what's still running (`"Still running: 1 agent"`, or empty), `awaiting` whether it's your turn, `group` the sidebar group the row is in, to show (`"Awaiting input"`, or a folder name when the sidebar groups by folder), and `groupKey` that group's stable id, to group by (`"awaiting"`, `"processing"`, `"idle"`, `"resumable"`, or the folder name) |
 | `conversation` | `sessionId`, `mtimeMs`, `entries: [{kind:"turn", index, prompt?, items: [{kind:"text",text} \| {kind:"tools",labels}]}]`, `hasEarlier`. The entries are a window that rolls forward: the last hour's turns, at least the latest 5 and at most 30. `index` is the transcript's turn number. `hasEarlier` says there are turns before the window |
 | `earlier` | `sessionId`, `before`, `entries`: up to 10 turns before turn `before`, `hasEarlier`: there are more before those |
@@ -54,6 +57,25 @@ within 8 s the page connects again, as for any stalled connection.
 | `error` | `message` |
 | `goodbye` | `reason`: `"disconnected"` (ended in the app), `"replaced"` (this phone connected to the app again, from another tab or browser) or `"refused"` (the pairing check failed) |
 | `usage` | `usage`: `{percent, dailyUsd, level}`, today's spend as a percentage of today's budget share, and that share in USD; `level` is `"ok"`, `"warn"` or `"alert"`. `null` when the app has no budget set |
+| `image` | `id`, `sessionId`, `ref`, then either `mime`, `size` (bytes) and `pieces` (how many `imagePiece`s follow), or `error`: `"not-found"`, `"ambiguous"` (more than one file matches a name), `"not-image"`, `"too-large"` or `"refused"` |
+| `imagePiece` | `id`, `index` (from 0), `data`: up to 64 KB of the file, binary (an ArrayBuffer or typed array, as PeerJS hands it over) |
+| `imageDone` | `id`: every piece is sent; a page missing any of them shows the image couldn't be loaded |
+
+## Images
+
+`welcome`'s `features` holds `"images"` while the app's image sharing setting is on (it's off by
+default), and `features` says when that changes. Only then does the page make the image
+references in Claude's text tappable. A tap sends `openImage`; the app answers with one `image`,
+then its `imagePiece`s and `imageDone`. A cancelled or superseded request gets nothing more, not
+even a reply, so the page never waits on one and ignores anything late for an id it's no longer
+asking for. A connection lost while loading loses the image too; the page offers to ask again.
+
+An image reference is a code span or a Markdown link target (`<...>` or bare) that ends in
+`.png`, `.jpg`, `.jpeg`, `.gif`, `.webp` or `.bmp`, isn't a URL, and isn't inside a fenced code
+block. The page and the app find the same ones: `test/fixtures/image_refs.json` lists cases with
+the references each holds, and both sides test against an identical copy. A reference that isn't
+a full path (a drive letter, or a leading `\` or `/`) the app looks for by name, which can find
+none or several; the page then offers to ask Claude for the full path.
 
 ## Versions
 

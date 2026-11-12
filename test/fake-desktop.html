@@ -35,11 +35,50 @@
     badProof: false,
     connections: 0,
     sessions: example("sessions").sessions,
+    /**
+     * What `openImage` finds, by reference: `{ type, bytes }` (a Uint8Array) or `{ error }`; a
+     * reference that isn't here gets no answer. `stopAfter: n` sends only the first n pieces,
+     * holding the rest and `imageDone` for `release`; `skip: i` leaves piece i out.
+     */
+    images: {},
+    /** The ids the phone sent `cancelImage` for. */
+    cancelled: [],
+    /** What `stopAfter` held back, by request id. */
+    held: {},
+    /** Sends what `stopAfter` held back for request `id`, cancelled or not, as if already on its way. */
+    release(id) {
+      for (const m of desk.held[id] ?? []) desk.send(m);
+      delete desk.held[id];
+    },
     send(m) { conn?.send({ v: 1, ...m }); },
     closeConnection() { conn?.close(); conn = null; },
     destroy() { peer.destroy(); },
   };
   window.desk = desk;
+
+  /** The most an `imagePiece` holds, as the app sends them. */
+  const PIECE_BYTES = 64 * 1024;
+
+  function answerImage(m) {
+    const found = desk.images[m.ref];
+    if (!found) return;
+    const reply = { type: "image", id: m.id, sessionId: m.sessionId, ref: m.ref };
+    if (found.error) {
+      desk.send({ ...reply, error: found.error });
+      return;
+    }
+    const pieces = Math.ceil(found.bytes.length / PIECE_BYTES);
+    desk.send({ ...reply, mime: found.type, size: found.bytes.length, pieces });
+    const rest = [];
+    for (let index = 0; index < pieces; index++) {
+      if (index === found.skip) continue;
+      rest.push({ type: "imagePiece", id: m.id, index, data: found.bytes.slice(index * PIECE_BYTES, (index + 1) * PIECE_BYTES) });
+    }
+    rest.push({ type: "imageDone", id: m.id });
+    const now = found.stopAfter === undefined ? rest : rest.slice(0, found.stopAfter);
+    for (const piece of now) desk.send(piece);
+    if (now.length < rest.length) desk.held[m.id] = rest.slice(now.length);
+  }
 
   const newSecret = () => toBase64Url(crypto.getRandomValues(new Uint8Array(32)));
 
@@ -93,6 +132,8 @@
         c.send({ v: 1, type: "goodbye", reason: "disconnected" });
         c.close();
       }
+      if (m.type === "openImage") answerImage(m);
+      if (m.type === "cancelImage") desk.cancelled.push(m.id);
       if (m.type === "openSession") {
         const convo = example("conversation");
         c.send({ ...convo, sessionId: m.sessionId });
