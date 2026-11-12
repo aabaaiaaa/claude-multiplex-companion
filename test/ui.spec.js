@@ -869,8 +869,11 @@ test("shows the live window, and earlier turns above it a page at a time", async
   await liveWindow(desk, 30, 34);
   await expect(phone.locator(".chat .you")).toHaveCount(5);
   const earlier = phone.locator(".chat .earlier");
+  // Tapped where it is: a click would scroll it into view, reach the top, and so load the earlier
+  // turns by scrolling (its own test, below) and disable the button before the click lands.
+  const tap = async () => { await expect(earlier).toBeEnabled(); await earlier.dispatchEvent("click"); };
   await expect(earlier).toHaveText("Show earlier turns");
-  await earlier.click();
+  await tap();
   await expect.poll(() => lastOfType(desk, "loadEarlier")).toMatchObject({ sessionId: "session-1", before: 30 });
   await expect(earlier).toHaveText("Loading earlier turns…");
   // Where the first turn sat before the page arrived, so the view can be checked for jumping.
@@ -882,7 +885,7 @@ test("shows the live window, and earlier turns above it a page at a time", async
   expect(Math.abs((await firstLive.boundingBox()).y - before), "the turn being read stays put").toBeLessThan(40);
   await expect(earlier).toHaveText("Show earlier turns");
   // The start of the conversation: no more to fetch.
-  await earlier.click();
+  await tap();
   await expect.poll(() => lastOfType(desk, "loadEarlier")).toMatchObject({ before: 20 });
   await desk.evaluate(e => window.desk.send({ type: "earlier", sessionId: "session-1", before: 20, entries: e, hasEarlier: false }), turns(15, 19));
   await expect(phone.locator(".chat .you")).toHaveCount(20);
@@ -903,7 +906,9 @@ test("rolls on, dropping the earlier turns, once you're back at the end", async 
   const { desk, phone } = await paired(context, LIVE);
   await openFirst(phone, desk);
   await liveWindow(desk, 30, 34);
-  await phone.locator(".chat .earlier").click();
+  // Tapped where it is, as in the test above: a click would scroll to the top and disable it first.
+  await expect(phone.locator(".chat .earlier")).toBeEnabled();
+  await phone.locator(".chat .earlier").dispatchEvent("click");
   await expect.poll(() => lastOfType(desk, "loadEarlier")).toBeDefined();
   await desk.evaluate(e => window.desk.send({ type: "earlier", sessionId: "session-1", before: 30, entries: e, hasEarlier: true }), turns(20, 29));
   await expect(phone.locator(".chat .you")).toHaveCount(15);
