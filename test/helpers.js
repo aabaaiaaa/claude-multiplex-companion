@@ -14,8 +14,12 @@ export const deskId = () => `desk-${Date.now()}-${++counter}`;
 /** The QR code's secret for a test desk, base64url like a real one; the same for every test. */
 export const TEST_CODE = "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA";
 
-/** The link a desk's QR code would hold. */
-export const phoneLink = (id, code = TEST_CODE) => `/index.html#peer=${id}&server=localhost:9123&k=${code}`;
+/** The test PeerJS server, as the app's link names it: a URL, encoded. */
+export const TEST_SERVER = "http://localhost:9123/";
+
+/** The link a desk's QR code would hold: the pairing server and any `stun` relay servers, then the code. */
+export const phoneLink = (id, code = TEST_CODE, { server = TEST_SERVER, stun = [] } = {}) =>
+  `/index.html#peer=${id}&server=${encodeURIComponent(server)}${stun.map(s => `&stun=${encodeURIComponent(s)}`).join("")}&k=${code}`;
 
 export async function openDesk(context, id, { stall = false } = {}) {
   const page = await context.newPage();

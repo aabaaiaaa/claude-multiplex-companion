@@ -64,9 +64,12 @@ starts relying on something only a newer app sends, and leave it where it is oth
 
 ## Pairing link
 
-The app's QR code opens `<page url>#peer=<desktop peer id>&k=<code>`. The code is 32 random bytes,
-base64url; the app shows a new one every 30 seconds, takes each for under a minute, and takes
-none once a phone has paired. A test setup adds `&server=<host>:<port>` to name a local PeerJS
-server. Without one, the PeerJS cloud server is used. Browsers never send the `#` part to the
+The app's QR code opens `<page url>#peer=<desktop peer id>&server=<pairing server>&stun=<relay
+server>…&k=<code>`, each value URL-encoded. `server` is the PeerJS server's URL, which must be
+https:// (http:// only for `localhost` or `127.0.0.1`, as the tests use); a link without a usable
+one isn't a pairing. There's a `stun` for each relay server set in the app, `stun:` or `stuns:`
+only. The page has no servers of its own, and keeps these with the pairing for reconnects. The
+code is 32 random bytes, base64url; the app shows a new one every 30 seconds, takes each for under
+a minute, and takes none once a phone has paired. Browsers never send the `#` part to the
 page's host, and the page takes it out of the address bar as soon as it loads. The page keeps
 only the device key it's given, never the code.

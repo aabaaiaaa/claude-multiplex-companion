@@ -53,30 +53,40 @@ const LEAVE_WAIT_MS = 1500;
 /** How long to wait for the app's challenge once connected before connecting again. */
 const CHALLENGE_WAIT_MS = 8000;
 
-/** STUN plus the free openrelay TURN servers, for phones on another network. */
-const CLOUD_ICE_SERVERS = [
-  { urls: "stun:stun.l.google.com:19302" },
-  { urls: "stun:stun1.l.google.com:19302" },
-  { urls: "turn:openrelay.metered.ca:80", username: "openrelayproject", credential: "openrelayproject" },
-  { urls: "turn:openrelay.metered.ca:443", username: "openrelayproject", credential: "openrelayproject" },
-  { urls: "turn:openrelay.metered.ca:443?transport=tcp", username: "openrelayproject", credential: "openrelayproject" },
-];
-
 function store(get) {
   try { return get(); } catch { return null; }
 }
 
+/** A pairing server this page will use: an https:// URL, or http:// on this machine only, as the
+ *  tests run one there. Anything else, null. */
+export function usableServer(raw) {
+  let url;
+  try { url = new URL(raw); } catch { return null; }
+  const local = url.hostname === "localhost" || url.hostname === "127.0.0.1";
+  return url.protocol === "https:" || (url.protocol === "http:" && local) ? url.href : null;
+}
+
+/** The relay servers the link names; only `stun:` and `stuns:` ones, as the app sends no others. */
+const stunServers = list => (Array.isArray(list) ? list : []).filter(s => typeof s === "string" && /^stuns?:/i.test(s));
+
 /**
- * The pairing from the link's `#peer=…&k=…&server=…` (`code`: the QR code's secret), else the one
- * this page remembers (`deviceKey`: the key the app gave it). One with neither can't pass the
- * pairing check, so it counts as none.
+ * The pairing from the link's `#peer=…&server=…&stun=…&k=…` (`code`: the QR code's secret), else
+ * the one this page remembers (`deviceKey`: the key the app gave it). The page has no servers of
+ * its own: one without a usable pairing server, or with neither secret, counts as none.
  */
 export function readPairing(hash) {
   const params = new URLSearchParams(hash.replace(/^#/, ""));
   const peer = params.get("peer");
-  if (peer) return params.get("k") ? { peer, server: params.get("server"), code: params.get("k") } : null;
+  if (peer) {
+    const server = usableServer(params.get("server"));
+    const code = params.get("k");
+    return server && code ? { peer, server, stun: stunServers(params.getAll("stun")), code } : null;
+  }
   const saved = store(() => JSON.parse(localStorage.getItem(PAIRING_KEY) ?? "null"));
-  if (saved && typeof saved.peer === "string" && typeof saved.deviceKey === "string") return saved;
+  const server = saved && usableServer(saved.server);
+  if (server && typeof saved.peer === "string" && typeof saved.deviceKey === "string") {
+    return { peer: saved.peer, server, stun: stunServers(saved.stun), deviceKey: saved.deviceKey };
+  }
   store(() => localStorage.removeItem(PAIRING_KEY));
   return null;
 }
@@ -98,10 +108,17 @@ export function describeCandidateLine(line) {
   return `${type} ${(parts[2] ?? "?").toLowerCase()}${parts[4]?.endsWith(".local") ? " (mDNS name)" : ""}`;
 }
 
-function peerOptions(server) {
-  if (!server) return { config: { iceServers: CLOUD_ICE_SERVERS } };
-  const [host, port] = server.split(":");
-  return { host, port: Number(port), path: "/", secure: Number(port) === 443, config: { iceServers: [] } };
+/** Where PeerJS reaches the pairing server, and the relay servers WebRTC uses, both from the link. */
+export function peerOptions(server, stun) {
+  const url = new URL(server);
+  const secure = url.protocol === "https:";
+  return {
+    host: url.hostname,
+    port: url.port ? Number(url.port) : secure ? 443 : 80,
+    path: url.pathname || "/",
+    secure,
+    config: { iceServers: stun.map(urls => ({ urls })) },
+  };
 }
 
 /**
@@ -175,7 +192,7 @@ export class Connection {
     }
     if (typeof m.deviceKey === "string") {
       // The code is spent: from now on this phone proves itself with its own key.
-      this.pairing = { peer: this.pairing.peer, server: this.pairing.server, deviceKey: m.deviceKey };
+      this.pairing = { peer: this.pairing.peer, server: this.pairing.server, stun: this.pairing.stun, deviceKey: m.deviceKey };
       store(() => localStorage.setItem(PAIRING_KEY, JSON.stringify(this.pairing)));
     }
     conn.authed = true;
@@ -202,8 +219,8 @@ export class Connection {
   connect() {
     this.timer = null;
     this.dropPeer();
-    const options = peerOptions(this.pairing.server);
-    this.log(`Connecting via ${this.pairing.server ? `local server ${this.pairing.server}` : "the PeerJS cloud server"}, ${options.config.iceServers.length} relay servers`);
+    const options = peerOptions(this.pairing.server, this.pairing.stun);
+    this.log(`Connecting via the pairing server, ${options.config.iceServers.length} relay servers`);
     const peer = new Peer(crypto.randomUUID(), { ...options, debug: 2, logFunction: (...args) => this.log(`PeerJS: ${args.map(String).join(" ")}`) });
     this.peer = peer;
     peer.on("open", () => {

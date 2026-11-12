@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { deskId, deskReceived, openDesk, openPhone, routePeerjs, TEST_CODE } from "./helpers.js";
+import { deskId, deskReceived, openDesk, openPhone, phoneLink, routePeerjs, TEST_CODE, TEST_SERVER } from "./helpers.js";
 
 test.beforeEach(async ({ context }) => { await routePeerjs(context); });
 
@@ -223,6 +223,48 @@ test("stamps each line with its time, shows the route in use, and clears lines o
 test("asks for a scan when it was never paired", async ({ page }) => {
   await page.goto("/index.html");
   await expect(page.locator(".screen-unpaired")).toBeVisible();
+});
+
+test("uses the pairing server and relay servers the link names, and keeps them for reconnects", async ({ context }) => {
+  await recordPeerConnections(context);
+  const id = deskId();
+  const desk = await openDesk(context, id);
+  const stun = ["stun:stun.example.test:3478", "stun:stun2.example.test:3478"];
+  const phone = await context.newPage();
+  await phone.goto(phoneLink(id, TEST_CODE, { stun }));
+  await expect(phone.locator(".status")).toHaveText("Connected");
+  const relays = () => phone.evaluate(() => window.pcs.at(-1).getConfiguration().iceServers.flatMap(s => [].concat(s.urls)));
+  expect(await relays(), "the link's, and nothing built in").toEqual(stun);
+  const saved = await phone.evaluate(() => JSON.parse(localStorage.getItem("cmx-companion-pairing")));
+  expect(saved).toMatchObject({ server: TEST_SERVER, stun });
+  // Reopened without the link: the same servers, from the saved pairing.
+  await phone.goto("/index.html");
+  await expect(phone.locator(".status")).toHaveText("Connected");
+  await expect.poll(() => desk.evaluate(() => window.desk.connections)).toBe(2);
+  expect(await relays()).toEqual(stun);
+});
+
+test("isn't paired by a link without a pairing server it can use", async ({ context }) => {
+  const id = deskId();
+  await openDesk(context, id);
+  for (const link of [
+    `/index.html#peer=${id}&k=${TEST_CODE}`,
+    phoneLink(id, TEST_CODE, { server: "http://peer.example.test/" }),
+    phoneLink(id, TEST_CODE, { server: "localhost:9123" }),
+  ]) {
+    const phone = await context.newPage();
+    await phone.goto(link);
+    await expect(phone.locator(".screen-unpaired"), link).toBeVisible();
+    await phone.close();
+  }
+});
+
+test("forgets a saved pairing with no pairing server, and asks for a scan", async ({ page }) => {
+  await page.goto("/index.html");
+  await page.evaluate(() => localStorage.setItem("cmx-companion-pairing", JSON.stringify({ peer: "desk-x", server: null, deviceKey: "k" })));
+  await page.goto("/index.html");
+  await expect(page.locator(".screen-unpaired")).toBeVisible();
+  expect(await page.evaluate(() => localStorage.getItem("cmx-companion-pairing"))).toBeNull();
 });
 
 test("suggests mobile data or another Wi-Fi when the connection stalls, and hides it once connected", async ({ context }) => {

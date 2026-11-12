@@ -29,15 +29,16 @@ the PeerJS server that introduces them can't pose as either.
 
 ## How it connects
 
-- **The QR code** holds this page's address plus the app's PeerJS id and a one-time code, after a
-  `#`. The app shows a new code every 30 seconds, and none works once a phone has paired.
+- **The QR code** holds this page's address plus, after a `#`, the app's PeerJS id, the pairing
+  server and relay servers set in the app, and a one-time code. The page has no servers of its
+  own. The app shows a new code every 30 seconds, and none works once a phone has paired.
 - **The pairing check:** the page proves it has the code, or later the key the app gave it, and
   the app proves itself back, both bound to the connection (see [PROTOCOL.md](PROTOCOL.md)). A
   code that's expired or been used gets a request to scan a new one.
-- **The page** connects to that id over a WebRTC data channel, through the PeerJS cloud server.
-  STUN gets it through home routers and mobile data. There's no working relay, so a phone on
-  the same Wi-Fi as the computer may not connect: after a stalled attempt the page suggests
-  mobile data or another Wi-Fi network.
+- **The page** connects to that id over a WebRTC data channel, through the pairing server the link
+  names, which must be https://. The link's STUN servers get it through home routers and mobile
+  data. There's no relay that passes the traffic on, so a phone on the same Wi-Fi as the computer
+  may not connect: after a stalled attempt the page suggests mobile data or another Wi-Fi network.
 - **Connection details,** from the menu or the hint after a stalled attempt, open over the page and
   log each step, with a Copy button: states and
   the kinds of address each side offered, never the addresses.
@@ -71,9 +72,9 @@ served from `node_modules`.
 1. Serve the page over https: the app takes only an https:// address. For example, with a local
    certificate, `npx http-server . -p 8123 -c-1 -S -C cert.pem -K key.pem`.
 2. In the app, set **Settings → Advanced → Device pairing** to that address, such as
-   `https://localhost:8123/`. The phone button shows in the top bar once it's set.
-   `CMX_COMPANION_URL` overrides the setting for one run. The app still uses the PeerJS cloud
-   server.
+   `https://localhost:8123/`, and set a pairing server: a PeerJS server over https, such as one
+   run with the `peer` package or its Docker image. The phone button shows in the top bar once
+   both are set. `CMX_COMPANION_URL` and `CMX_COMPANION_PEER_SERVER` override them for one run.
 3. Press the phone button (📱) in the top bar, then **Pair a phone**. Open the link it
    shows in a desktop browser, or scan it with a phone on the same network (using your machine's
    address instead of `localhost`).
