@@ -12,6 +12,8 @@ const UNAVAILABLE_LIMIT = 3;
 
 /** ICE states after which WebRTC soon drops its candidate pairs from the stats. */
 const ICE_GAVE_UP = ["disconnected", "failed"];
+/** How long ICE may stay "disconnected" before the connection counts as lost. */
+const DISCONNECTED_GRACE_MS = 5000;
 /** ICE states with a route in use, and those after which there's none. */
 const ICE_CONNECTED = ["connected", "completed"];
 const ROUTE_GONE = ["disconnected", "failed", "closed"];
@@ -299,8 +301,19 @@ export class Connection {
     // Not before: Chrome reuses a stats report for a moment, and one read before the secure link
     // is up has no certificates, which would fail the pairing check that reads them next.
     pc.addEventListener("connectionstatechange", () => { if (pc.connectionState === "connected") checkRoute(); });
+    let stuck = null;
     pc.addEventListener("iceconnectionstatechange", () => {
       this.log(`ICE connection state: ${pc.iceConnectionState}`);
+      clearTimeout(stuck);
+      // Browsers may sit in "disconnected" for good, and PeerJS closes only on "failed", so the
+      // page would stay "Connected" on a dead link. Past a blip, connect afresh instead.
+      if (pc.iceConnectionState === "disconnected") {
+        stuck = setTimeout(() => {
+          if (conn !== this.conn || pc.iceConnectionState !== "disconnected") return;
+          this.log(`No way back to the computer after ${DISCONNECTED_GRACE_MS / 1000}s`);
+          this.scheduleRetry();
+        }, DISCONNECTED_GRACE_MS);
+      }
       if (ROUTE_GONE.includes(pc.iceConnectionState)) {
         shown = null;
         if (conn === this.conn) this.onRoute(null);

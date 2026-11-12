@@ -14,6 +14,53 @@ test("connects to the desktop and says hello", async ({ context }) => {
   expect(typeof hello.clientId).toBe("string");
 });
 
+/** Keeps each page's RTCPeerConnections, so a test can put one in the state a lost network leaves. */
+async function recordPeerConnections(context) {
+  await context.addInitScript(() => {
+    const Real = window.RTCPeerConnection;
+    window.pcs = [];
+    window.RTCPeerConnection = class extends Real {
+      constructor(...args) { super(...args); window.pcs.push(this); }
+    };
+  });
+}
+
+/** Sets the phone's newest connection's ICE state, as the browser would, and says so. */
+const setIce = (phone, iceState) => phone.evaluate(s => {
+  const pc = window.pcs.at(-1);
+  Object.defineProperty(pc, "iceConnectionState", { configurable: true, get: () => s });
+  pc.dispatchEvent(new Event("iceconnectionstatechange"));
+}, iceState);
+
+test("connects afresh when the connection stays disconnected, as browsers can leave it", async ({ context }) => {
+  await recordPeerConnections(context);
+  const id = deskId();
+  const desk = await openDesk(context, id);
+  const phone = await openPhone(context, id);
+  await expect(phone.locator(".status")).toHaveText("Connected");
+  await setIce(phone, "disconnected");
+  await expect(phone.locator(".status")).toHaveText("Reconnecting…", { timeout: 8000 });
+  await expect.poll(() => desk.evaluate(() => window.desk.connections), { timeout: 30_000 }).toBe(2);
+  await expect(phone.locator(".status")).toHaveText("Connected");
+  await phone.locator(".menu-button").click();
+  await phone.locator(".menu-details").click();
+  await expect(phone.locator(".diagnostics-log")).toContainText("No way back to the computer after 5s");
+});
+
+test("rides out a disconnect that recovers within a few seconds", async ({ context }) => {
+  await recordPeerConnections(context);
+  const id = deskId();
+  const desk = await openDesk(context, id);
+  const phone = await openPhone(context, id);
+  await expect(phone.locator(".status")).toHaveText("Connected");
+  await setIce(phone, "disconnected");
+  await phone.waitForTimeout(2000);
+  await setIce(phone, "connected");
+  await phone.waitForTimeout(5000);
+  await expect(phone.locator(".status")).toHaveText("Connected");
+  expect(await desk.evaluate(() => window.desk.connections)).toBe(1);
+});
+
 test("reconnects on its own after the connection drops", async ({ context }) => {
   const id = deskId();
   const desk = await openDesk(context, id);
