@@ -733,7 +733,10 @@ function setMenu(open) {
 
 $(".menu-button").addEventListener("click", e => {
   e.stopPropagation();
-  setMenu($(".menu").hidden);
+  const opening = $(".menu").hidden;
+  setMenu(opening);
+  // A phone often wakes the page before its network is back, so look again when asked.
+  if (opening) checkForUpdate();
 });
 document.addEventListener("click", e => {
   if (!$(".menu").hidden && !e.target.closest(".menu")) setMenu(false);
@@ -857,9 +860,19 @@ async function deployedVersion() {
   }
 }
 
+/** How soon to look again after a check that couldn't reach the site. */
+const UPDATE_RETRY_MS = 30_000;
+let updateRetry = null;
+
 async function checkForUpdate() {
   const latest = await deployedVersion();
-  const newer = !!latest && latest !== BUILD_INFO.version;
+  clearTimeout(updateRetry);
+  if (!latest) {
+    // Offline, or the phone just woke: keep what's shown, and try again soon.
+    updateRetry = setTimeout(checkForUpdate, UPDATE_RETRY_MS);
+    return;
+  }
+  const newer = latest !== BUILD_INFO.version;
   $(".menu-update").hidden = !newer;
   if (newer) $(".menu-button").dataset.update = "1";
   else delete $(".menu-button").dataset.update;
@@ -873,6 +886,9 @@ $(".menu-update").addEventListener("click", async () => {
   location.reload();
 });
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") checkForUpdate(); });
+// Back online, or restored by the browser without a reload.
+window.addEventListener("online", checkForUpdate);
+window.addEventListener("pageshow", e => { if (e.persisted) checkForUpdate(); });
 setInterval(checkForUpdate, UPDATE_CHECK_MS);
 checkForUpdate();
 

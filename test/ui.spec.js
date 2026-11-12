@@ -532,6 +532,24 @@ test("shows today's spend against today's budget in the middle of the top bar", 
   await expect(usage).toBeHidden();
 });
 
+test("looks for a newer version on opening the menu, and keeps one found when the site can't be reached", async ({ context }) => {
+  const { phone } = await paired(context);
+  const deployed = "abc1234";
+  await phone.route(/\/version\.js/, route => route.fulfill({
+    contentType: "application/javascript",
+    body: `export const BUILD_INFO = { version: '${deployed}', date: '2026-11-11 10:00:00' };`,
+  }));
+  // No other check runs in between: the menu opening is what finds it.
+  await phone.locator(".menu-button").click();
+  await expect(phone.locator(".menu-update")).toBeVisible();
+  await phone.locator(".menu-button").click();
+  await phone.unroute(/\/version\.js/);
+  await phone.route(/\/version\.js/, route => route.abort());
+  await phone.locator(".menu-button").click();
+  await phone.waitForTimeout(300);
+  await expect(phone.locator(".menu-update"), "still offered while offline").toBeVisible();
+});
+
 test("offers a newer version from the menu, and loads it", async ({ context }) => {
   const { phone } = await paired(context);
   await phone.locator(".menu-button").click();
