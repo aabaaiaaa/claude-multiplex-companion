@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { readFileSync } from "node:fs";
-import { deskId, deskReceived, openDesk, openPhone, routePeerjs } from "./helpers.js";
+import { deskId, deskReceived, openDesk, openPhone, phoneLink, routePeerjs } from "./helpers.js";
 
 test.beforeEach(async ({ context }) => { await routePeerjs(context); });
 
@@ -11,12 +11,20 @@ const SESSIONS = [{
   canResume: false, detail: "", status: "idle", awaiting: false, group: "Idle", groupKey: "idle",
 }];
 
-/** Pairs a phone with a desk whose welcome carries `features`, and opens the session. */
-async function open(context, features) {
+/** Pairs a phone with a desk whose welcome carries `features`, and opens the session; `clock`
+ *  gives the phone a test clock first. */
+async function open(context, features, { clock = false } = {}) {
   const id = deskId();
   const desk = await openDesk(context, id);
   await desk.evaluate(([s, f]) => { window.desk.sessions = s; window.desk.features = f; }, [SESSIONS, features]);
-  const phone = await openPhone(context, id);
+  let phone;
+  if (clock) {
+    phone = await context.newPage();
+    await phone.clock.install();
+    await phone.goto(phoneLink(id));
+  } else {
+    phone = await openPhone(context, id);
+  }
   await expect(phone.locator(".status")).toHaveText("Connected");
   await phone.locator(".session-list li", { hasText: "parser-work" }).click();
   await expect(phone.locator(".screen-chat")).toBeVisible();
@@ -364,21 +372,22 @@ test("the back button closes the viewer and stays on the chat", async ({ context
 // ---- Asking the app for an image ------------------------------------------------------
 
 /**
- * Gives the desk an image for `ref`: random bytes of `size` if given, else a small real PNG;
- * `extra` adds `stopAfter` or `skip`. Returns the bytes' SHA-256, to compare with what's shown.
+ * Gives the desk an image for `ref`: a small real PNG, padded with random bytes to `size` if
+ * given (still decodable: what follows a PNG's end is ignored); `extra` adds `stopAfter` or
+ * `skip`. Returns the bytes' SHA-256, to compare with what's shown.
  */
 const giveImage = (desk, ref, { size, ...extra } = {}) => desk.evaluate(async ([ref, size, extra]) => {
-  let bytes;
+  const canvas = document.createElement("canvas");
+  canvas.width = 40; canvas.height = 30;
+  const g = canvas.getContext("2d");
+  g.fillStyle = "#36a"; g.fillRect(0, 0, 40, 30);
+  const blob = await new Promise(done => canvas.toBlob(done, "image/png"));
+  let bytes = new Uint8Array(await blob.arrayBuffer());
   if (size) {
+    const png = bytes;
     bytes = new Uint8Array(size);
     for (let at = 0; at < size; at += 65536) crypto.getRandomValues(bytes.subarray(at, at + 65536));
-  } else {
-    const canvas = document.createElement("canvas");
-    canvas.width = 40; canvas.height = 30;
-    const g = canvas.getContext("2d");
-    g.fillStyle = "#36a"; g.fillRect(0, 0, 40, 30);
-    const blob = await new Promise(done => canvas.toBlob(done, "image/png"));
-    bytes = new Uint8Array(await blob.arrayBuffer());
+    bytes.set(png);
   }
   window.desk.images[ref] = { type: "image/png", bytes, ...extra };
   const hash = await crypto.subtle.digest("SHA-256", bytes);
@@ -621,4 +630,113 @@ test("pieces as typed arrays or ArrayBuffers make the same image", async ({ cont
     return { type: blob.type, same: got.length === bytes.length && got.every((b, i) => b === bytes[i]) };
   }, id);
   expect(shown).toEqual({ type: "image/png", same: true });
+});
+
+test("images being turned off mid-image ends it as couldn't load", async ({ context }) => {
+  const { desk, phone } = await open(context, ["images"]);
+  await giveImage(desk, "shots/after.png", { size: 300_000, stopAfter: 1 });
+  await show(desk, "Check", TEXT);
+  await AFTER(phone).click();
+  await expect(viewerStatus(phone)).toHaveText("Loading… 22%");
+  await desk.evaluate(() => window.desk.send({ type: "features", features: [] }));
+  await expect(viewerStatus(phone)).toHaveText("Couldn't load the image.");
+  await expect(viewerButton(phone)).toHaveCount(0);
+  const [m] = await requests(desk);
+  await expect.poll(() => desk.evaluate(() => window.desk.cancelled)).toEqual([m.id]);
+  // Its late pieces show nothing.
+  await desk.evaluate(id => window.desk.release(id), m.id);
+  await syncPoint(desk, phone);
+  await expect(viewerStatus(phone)).toHaveText("Couldn't load the image.");
+});
+
+test("a features message that keeps images leaves the one in flight alone", async ({ context }) => {
+  const { desk, phone } = await open(context, ["images"]);
+  const hash = await giveImage(desk, "shots/after.png", { size: 300_000, stopAfter: 1 });
+  await show(desk, "Check", TEXT);
+  await AFTER(phone).click();
+  await expect(viewerStatus(phone)).toHaveText("Loading… 22%");
+  await desk.evaluate(() => window.desk.send({ type: "features", features: ["images"] }));
+  const [m] = await requests(desk);
+  await desk.evaluate(id => window.desk.release(id), m.id);
+  expect(await shownHash(phone)).toBe(hash);
+});
+
+test("an error from the app while an image is on its way ends it as couldn't load", async ({ context }) => {
+  const { desk, phone } = await open(context, ["images"]);
+  await show(desk, "Check", "See `quiet.png`.");
+  await phone.locator(".image-ref").click();
+  await expect(viewerStatus(phone)).toHaveText("Loading…");
+  await desk.evaluate(() => window.desk.send({ type: "error", message: "No such session" }));
+  await expect(viewerStatus(phone)).toHaveText("Couldn't load the image.");
+  await expect(viewerButton(phone)).toHaveCount(0);
+});
+
+test("an image that hears nothing for 20 seconds offers Try again", async ({ context }) => {
+  const { desk, phone } = await open(context, ["images"], { clock: true });
+  const hash = await giveImage(desk, "shots/after.png", { size: 300_000, stopAfter: 1 });
+  await show(desk, "Check", TEXT);
+  await AFTER(phone).click();
+  await expect(viewerStatus(phone)).toHaveText("Loading… 22%");
+  const [m] = await requests(desk);
+  // Each piece starts the wait again.
+  await phone.clock.fastForward(15_000);
+  await desk.evaluate(id => window.desk.send(window.desk.held[id].shift()), m.id);
+  await expect(viewerStatus(phone)).toHaveText("Loading… 44%");
+  await phone.clock.fastForward(15_000);
+  await expect(viewerStatus(phone)).toHaveText("Loading… 44%");
+  await phone.clock.fastForward(6_000);
+  await expect(viewerStatus(phone)).toHaveText("Couldn't load the image.");
+  await expect(viewerButton(phone)).toHaveText("Try again");
+  await expect.poll(() => desk.evaluate(() => window.desk.cancelled)).toEqual([m.id]);
+  await desk.evaluate(() => { delete window.desk.images["shots/after.png"].stopAfter; });
+  await viewerButton(phone).click();
+  expect(await shownHash(phone)).toBe(hash);
+});
+
+test("an image with no reply at all gives up after 20 seconds", async ({ context }) => {
+  const { desk, phone } = await open(context, ["images"], { clock: true });
+  await show(desk, "Check", "See `quiet.png`.");
+  await phone.locator(".image-ref").click();
+  await expect(viewerStatus(phone)).toHaveText("Loading…");
+  await phone.clock.fastForward(19_000);
+  await expect(viewerStatus(phone)).toHaveText("Loading…");
+  await phone.clock.fastForward(2_000);
+  await expect(viewerStatus(phone)).toHaveText("Couldn't load the image.");
+  await expect(viewerButton(phone)).toHaveText("Try again");
+});
+
+test("pieces that fall short of the size the app gave offer Try again", async ({ context }) => {
+  const { desk, phone } = await open(context, ["images"]);
+  await show(desk, "Check", "See `quiet.png`.");
+  await phone.locator(".image-ref").click();
+  await expect.poll(async () => (await requests(desk)).length).toBe(1);
+  const [{ id }] = await requests(desk);
+  await phone.evaluate(async id => {
+    const { takeImageMessage } = await import("/images.js");
+    const canvas = document.createElement("canvas");
+    canvas.width = 20; canvas.height = 20;
+    const bytes = new Uint8Array(await (await new Promise(done => canvas.toBlob(done, "image/png"))).arrayBuffer());
+    takeImageMessage({ type: "image", id, sessionId: "session-1", ref: "quiet.png", mime: "image/png", size: bytes.length + 10, pieces: 1 });
+    takeImageMessage({ type: "imagePiece", id, index: 0, data: bytes });
+    takeImageMessage({ type: "imageDone", id });
+  }, id);
+  await expect(viewerStatus(phone)).toHaveText("Couldn't load the image.");
+  await expect(viewerButton(phone)).toHaveText("Try again");
+  await expect(phone.locator(".image-viewer .viewer-stage img")).toBeHidden();
+});
+
+test("bytes that don't decode as an image offer Try again", async ({ context }) => {
+  const { desk, phone } = await open(context, ["images"]);
+  await desk.evaluate(() => {
+    const bytes = new TextEncoder().encode("BM and then nothing a decoder can use");
+    window.desk.images["broken.bmp"] = { type: "image/bmp", bytes };
+  });
+  await show(desk, "Check", "See `broken.bmp`.");
+  await phone.locator(".image-ref").click();
+  await expect(viewerStatus(phone)).toHaveText("Couldn't load the image.");
+  await expect(viewerButton(phone)).toHaveText("Try again");
+  await expect(phone.locator(".image-viewer .viewer-stage img")).toBeHidden();
+  await viewerButton(phone).click();
+  await expect(viewerStatus(phone)).toHaveText("Couldn't load the image.");
+  expect(await requests(desk)).toHaveLength(2);
 });

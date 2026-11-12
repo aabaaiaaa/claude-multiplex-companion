@@ -190,11 +190,13 @@ export function viewerProgress(fraction) {
   setStatus(`Loading… ${Math.round(Math.min(1, Math.max(0, fraction)) * 100)}%`);
 }
 
-/** Shows the image, fitted to the screen. */
-export function viewerShow(blob) {
+/** Shows the image, fitted to the screen; `onError` runs if the bytes don't decode as one. */
+export function viewerShow(blob, onError) {
   if (!dialog.open) return;
   clearImage();
-  url = URL.createObjectURL(blob);
+  const shown = url = URL.createObjectURL(blob);
+  // Only this image's failure counts, not one replaced or cleared since.
+  img.onerror = () => { if (url === shown && dialog.open) onError?.(); };
   img.src = url;
   img.hidden = false;
   status.hidden = true;

@@ -1,7 +1,7 @@
 import { Connection } from "./connection.js";
 import { desktopTooOld, MIN_DESKTOP_VERSION } from "./desktop-version.js";
 import { formatText } from "./format.js";
-import { imagesComposerChanged, imagesStatus, requestImage, setupImages, takeImageMessage } from "./images.js";
+import { imagesAppError, imagesComposerChanged, imagesFeatures, imagesStatus, requestImage, setupImages, takeImageMessage } from "./images.js";
 import { closeViewer } from "./viewer.js";
 import { BUILD_INFO } from "./version.js";
 
@@ -796,6 +796,7 @@ function onMessage(m) {
       break;
     case "features":
       setImages(m.features);
+      imagesFeatures(m.features);
       break;
     case "usage":
       renderUsage(m.usage);
@@ -806,6 +807,7 @@ function onMessage(m) {
       takeImageMessage(m);
       break;
     case "error":
+      imagesAppError();
       dropRefusedGhost();
       state.resuming = null;
       toast(String(m.message ?? "Something went wrong"));

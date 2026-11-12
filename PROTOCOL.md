@@ -69,13 +69,20 @@ references in Claude's text tappable. A tap sends `openImage`; the app answers w
 then its `imagePiece`s and `imageDone`. A cancelled or superseded request gets nothing more, not
 even a reply, so the page never waits on one and ignores anything late for an id it's no longer
 asking for. A connection lost while loading loses the image too; the page offers to ask again.
+An `error` message, or a `features` message without `"images"`, also ends a request in flight:
+the app won't send it, so the page sends `cancelImage` and shows the image couldn't be loaded.
+A request that hears nothing for 20 seconds (no `image` or `imagePiece` for it) is given up the
+same way, with an offer to ask again. So are pieces that don't add up to the header's `size`,
+and bytes the browser can't show as an image.
 
 An image reference is a code span or a Markdown link target (`<...>` or bare) that ends in
-`.png`, `.jpg`, `.jpeg`, `.gif`, `.webp` or `.bmp`, isn't a URL, and isn't inside a fenced code
-block. The page and the app find the same ones: `test/fixtures/image_refs.json` lists cases with
-the references each holds, and both sides test against an identical copy. A reference that isn't
-a full path (a drive letter, or a leading `\` or `/`) the app looks for by name, which can find
-none or several; the page then offers to ask Claude for the full path.
+`.png`, `.jpg`, `.jpeg`, `.gif`, `.webp` or `.bmp`, isn't a URL, isn't led by `\`, `//` or
+`/??/` (a path with no drive, a network or device path, which the app never reads), and isn't
+inside a fenced code block. The page and the app find the same ones:
+`test/fixtures/image_refs.json` lists cases with the references each holds, and both sides test
+against an identical copy. A reference that isn't a full path (a drive letter, or a leading `/`)
+the app looks for by name, which can find none or several; the page then offers to ask Claude
+for the full path.
 
 ## Versions
 
