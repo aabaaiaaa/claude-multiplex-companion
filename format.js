@@ -25,8 +25,25 @@ function element(tag, text, cls) {
   return e;
 }
 
-const bold = text => split(text, BOLD, t => element("strong", t), t => [document.createTextNode(t)]);
-const inline = text => split(text, CODE, t => element("code", t), bold);
+const code = text => split(text, CODE, t => element("code", t), t => [document.createTextNode(t)]);
+
+/** Bold and code, where bold can hold code (`**the `x` file**`) but code never holds bold. */
+function inline(text) {
+  // Bold is found with each code span blanked out, so a `*` inside code is never a marker and
+  // every match starts and ends outside code.
+  const masked = text.replace(CODE, m => `\`${"x".repeat(m.length - 2)}\``);
+  const out = [];
+  let at = 0;
+  for (const m of masked.matchAll(BOLD)) {
+    if (m.index > at) out.push(...code(text.slice(at, m.index)));
+    const strong = document.createElement("strong");
+    strong.append(...code(text.slice(m.index + 2, m.index + m[0].length - 2)));
+    out.push(strong);
+    at = m.index + m[0].length;
+  }
+  if (at < text.length) out.push(...code(text.slice(at)));
+  return out;
+}
 
 /** The nodes that show `text` with its formatting applied. */
 export function formatText(text) {

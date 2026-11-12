@@ -44,6 +44,8 @@ const state = {
   lastResponseAt: null,
   responseKey: null,
   lastActiveAt: 0,
+  /** Sessions that started needing you since you last looked at them on this page. */
+  unseen: new Set(),
 };
 
 function el(tag, cls, text) {
@@ -60,6 +62,7 @@ function showScreen(name) {
   $(".composer").hidden = !inChat;
   if (!inChat) $(".title").textContent = "Sessions";
   renderJumps();
+  renderUnseen();
 }
 
 let toastTimer = null;
@@ -83,8 +86,10 @@ function renderList() {
     li.dataset.id = s.id;
     li.dataset.pending = s.pending ? "1" : "0";
     li.dataset.live = s.live ? "1" : "0";
+    li.dataset.unseen = state.unseen.has(s.id) ? "1" : "0";
     const name = el("span", "name", s.name);
     const badges = el("span", "badges");
+    if (state.unseen.has(s.id)) badges.append(el("span", "badge badge-new", "new"));
     if (s.pending) badges.append(el("span", "badge badge-pending", "needs you"));
     badges.append(el("span", "badge", s.state.replace(/_/g, " ")));
     li.append(name, badges);
@@ -92,12 +97,31 @@ function renderList() {
     list.append(li);
   }
   $(".empty").hidden = state.sessions.length > 0;
+  renderUnseen();
 }
+
+const inChat = () => !$(".screen-chat").hidden;
+/** The session in front of you: open, with the page on screen. */
+const looking = id => id === state.openId && inChat() && document.visibilityState === "visible";
+
+/** Inside a session, the menu says how many others have something new. */
+function renderUnseen() {
+  const others = [...state.unseen].filter(id => id !== state.openId).length;
+  $(".menu-sessions").textContent = others ? `Sessions (${others} new)` : "Sessions";
+  if (others && inChat()) $(".menu-button").dataset.unseen = "1";
+  else delete $(".menu-button").dataset.unseen;
+}
+
+/** Back on screen while in a session: it's been seen. */
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && inChat() && state.unseen.delete(state.openId)) renderList();
+});
 
 // ---- Chat --------------------------------------------------------------------
 
 function openSession(id) {
   state.openId = id;
+  if (state.unseen.delete(id)) renderList();
   state.entries = [];
   state.earlier = [];
   state.moreEarlier = false;
@@ -611,9 +635,13 @@ let lastBuzz = 0;
  *  page vibrate while it's on screen, and iPhones not at all. */
 function noteNeeds(sessions) {
   const now = new Set(sessions.filter(needsYou).map(s => s.id));
-  const fresh = needing !== null && [...now].some(id => !needing.has(id));
+  const fresh = needing === null ? [] : [...now].filter(id => !needing.has(id));
   needing = now;
-  if (fresh) buzz();
+  // Marked for the list, unless it's the one in front of you; buzz or not, as iPhones can't.
+  for (const id of fresh) if (!looking(id)) state.unseen.add(id);
+  const listed = new Set(sessions.map(s => s.id));
+  for (const id of state.unseen) if (!listed.has(id)) state.unseen.delete(id);
+  if (fresh.length) buzz();
 }
 
 function buzz() {

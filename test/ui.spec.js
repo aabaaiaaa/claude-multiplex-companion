@@ -348,6 +348,76 @@ test("buzzes when a session starts needing you, and can be switched off from the
   await expect(toggle).toHaveAttribute("aria-checked", "false");
 });
 
+test("marks the sessions that started needing you since you last looked, buzz or not", async ({ context }) => {
+  // An iPhone, say: no vibrate, but the marks still show.
+  await context.addInitScript(() => { delete Navigator.prototype.vibrate; });
+  const session = (id, name, st, pending = false) => ({ id, name, state: st, live: true, canType: true, pending, canResume: false });
+  const { desk, phone } = await paired(context, [session("session-1", "parser-work", "idle"), session("session-2", "docs", "waiting")]);
+  const list = (states, pending = []) => desk.evaluate(s => window.desk.send({ type: "sessions", sessions: s }), [
+    session("session-1", "parser-work", states[0], pending.includes("session-1")),
+    session("session-2", "docs", states[1], pending.includes("session-2")),
+  ]);
+  const row = name => phone.locator(".session-list li", { hasText: name });
+  const menuSessions = phone.locator(".menu-sessions");
+  await expect(row("docs"), "already waiting when the page connected: not new").toHaveAttribute("data-unseen", "0");
+
+  await list(["waiting", "waiting"]);
+  await expect(row("parser-work")).toHaveAttribute("data-unseen", "1");
+  await expect(row("parser-work").locator(".badge-new")).toHaveText("new");
+  await expect(row("docs")).toHaveAttribute("data-unseen", "0");
+
+  // Opening it is seeing it, with nothing new from the app needed to clear the row.
+  await openFirst(phone, desk);
+  await phone.locator(".back").click();
+  await expect(row("parser-work")).toHaveAttribute("data-unseen", "0");
+  await expect(row("parser-work").locator(".badge-new")).toHaveCount(0);
+  await openFirst(phone, desk);
+  await expect(phone.locator(".menu-button")).not.toHaveAttribute("data-unseen", "1");
+  await expect(menuSessions).toHaveText("Sessions");
+
+  // The open session asking now: you're looking at it, so it isn't marked. Another is, and the
+  // menu says so from inside the session.
+  await list(["processing", "processing"]);
+  await list(["attention", "processing"], ["session-1"]);
+  await expect(phone.locator(".menu-button")).not.toHaveAttribute("data-unseen", "1");
+  await list(["attention", "waiting"], ["session-1"]);
+  await expect(phone.locator(".menu-button")).toHaveAttribute("data-unseen", "1");
+  await phone.locator(".menu-button").click();
+  await expect(menuSessions).toHaveText("Sessions (1 new)");
+  await menuSessions.click();
+  await expect(phone.locator(".screen-list")).toBeVisible();
+  await expect(row("parser-work")).toHaveAttribute("data-unseen", "0");
+  await expect(row("docs")).toHaveAttribute("data-unseen", "1");
+  await expect(phone.locator(".menu-button"), "the rows show it on the list").not.toHaveAttribute("data-unseen", "1");
+
+  // A session that's gone from the list takes its mark with it.
+  await desk.evaluate(() => window.desk.send({ type: "sessions", sessions: [
+    { id: "session-1", name: "parser-work", state: "idle", live: true, canType: true, pending: false, canResume: false },
+  ] }));
+  await expect(phone.locator(".session-list li")).toHaveCount(1);
+  await openFirst(phone, desk);
+  await phone.locator(".menu-button").click();
+  await expect(menuSessions).toHaveText("Sessions");
+});
+
+test("marks the open session when it needs you while the page is off screen", async ({ context }) => {
+  const { desk, phone } = await paired(context, LIVE);
+  await openFirst(phone, desk);
+  const setVisible = v => phone.evaluate(visible => {
+    Object.defineProperty(document, "visibilityState", { configurable: true, get: () => (visible ? "visible" : "hidden") });
+    document.dispatchEvent(new Event("visibilitychange"));
+  }, v);
+  await setVisible(false);
+  await desk.evaluate(() => window.desk.send({ type: "sessions", sessions: [
+    { id: "session-1", name: "parser-work", state: "waiting", live: true, canType: true, pending: false, canResume: false },
+  ] }));
+  await expect.poll(() => phone.evaluate(() => document.querySelector(".session-list li")?.dataset.unseen)).toBe("1");
+  // Back on screen, still in that session: now it's seen.
+  await setVisible(true);
+  await phone.locator(".back").click();
+  await expect(phone.locator(".session-list li", { hasText: "parser-work" })).toHaveAttribute("data-unseen", "0");
+});
+
 test("has no buzz option where the browser can't vibrate", async ({ context }) => {
   await context.addInitScript(() => { delete Navigator.prototype.vibrate; });
   const { phone } = await paired(context);
@@ -384,6 +454,20 @@ test("shows Claude's bold, code and code blocks, and nothing else as markup", as
   await expect(reply.locator("pre.code-block")).toHaveText("npm ci\nnpm test");
   await expect(reply).toContainText("not <b>this</b>.");
   await expect(reply.locator("b")).toHaveCount(0);
+});
+
+test("shows bold that holds code, and leaves asterisks inside code alone", async ({ context }) => {
+  const { desk, phone } = await paired(context, LIVE);
+  await openFirst(phone, desk);
+  await desk.evaluate(text => window.desk.send({ type: "conversation", sessionId: "session-1", mtimeMs: Date.now(),
+    entries: [{ kind: "turn", prompt: "Check it", items: [{ kind: "text", text }] }] }),
+  "**Edit `src/app.js` first**, then run `a ** b` and `**not bold**`.");
+  const reply = phone.locator(".chat .claude").first();
+  const strong = reply.locator("strong");
+  await expect(strong).toHaveCount(1);
+  await expect(strong).toHaveText("Edit src/app.js first");
+  await expect(strong.locator("code")).toHaveText("src/app.js");
+  await expect(reply.locator(":scope > code")).toHaveText(["a ** b", "**not bold**"]);
 });
 
 test("makes the text smaller or larger from the menu, and remembers it", async ({ context }) => {
