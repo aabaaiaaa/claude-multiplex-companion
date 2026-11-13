@@ -53,6 +53,18 @@ the PeerJS server that introduces them can't pose as either.
 
 See [PROTOCOL.md](PROTOCOL.md) for the messages.
 
+## What stays on the phone
+
+Nothing from the app is shown or kept while the page isn't connected: no sessions, conversation,
+prompts, spend or images. While it reconnects, the page says so in place of the session it was
+showing, then fetches everything again. What you'd typed in the prompt box is put back once that
+session is open again, and dropped if it has gone; an ended pairing drops it. The page stores only
+its settings (text size, keep screen on, buzz) and, until the pairing ends, the key that lets it
+reconnect.
+
+The PeerJS script from unpkg carries an `integrity` hash, so the browser won't run any other
+bytes in its place.
+
 ## Developing
 
 Plain HTML, CSS and JavaScript modules, with no build step. PeerJS comes from unpkg, pinned to an

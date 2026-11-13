@@ -50,6 +50,8 @@ const state = {
   unseen: new Set(),
   /** Whether the app lets this phone open images; it says so in welcome, and again if that changes. */
   images: false,
+  /** Reconnected with a session open, until the first list says whether it's still there. */
+  reopening: false,
 };
 
 function el(tag, cls, text) {
@@ -103,6 +105,13 @@ function grouped(sessions) {
 function renderList() {
   const list = $(".session-list");
   list.replaceChildren();
+  // Not connected, the page holds no sessions: it says why, not that there are none.
+  if (state.status !== "connected") {
+    list.append(el("p", "loading", STATUS_TEXT[state.status]));
+    $(".empty").hidden = true;
+    renderUnseen();
+    return;
+  }
   for (const g of grouped(state.sessions)) {
     const section = el("section", "session-group");
     const heading = el("h2", "session-group-label", g.label);
@@ -175,8 +184,88 @@ function openSession(id) {
 
 function closeSession() {
   state.openId = null;
+  state.reopening = false;
+  draft = null;
   connection.send({ type: "closeSession" });
   showScreen("list");
+}
+
+// ---- Not connected: nothing from the app is shown or kept ----------------------
+
+/** What was typed in the prompt box when the link dropped, `{ sessionId, text }`: kept out of the
+ *  page while not connected, and put back once that session is open again. */
+let draft = null;
+
+/** Clears everything the app sent, and what was typed, from the page and from `state`; keeps only
+ *  the open session's id, to open it again on reconnecting. `keepDraft`: hold what was typed for
+ *  then, outside the page. */
+function wipe({ keepDraft = false } = {}) {
+  const input = $(".prompt-input");
+  if (keepDraft && state.openId && input.value) draft ??= { sessionId: state.openId, text: input.value };
+  if (!keepDraft) draft = null;
+  input.value = "";
+  state.sessions = [];
+  state.cards.clear();
+  state.answered.clear();
+  state.ghosts.clear();
+  state.entries = [];
+  state.earlier = [];
+  state.moreEarlier = false;
+  state.loadingEarlier = false;
+  state.requestedBefore = null;
+  state.lastResponseAt = null;
+  state.responseKey = null;
+  state.lastActiveAt = 0;
+  state.unseen.clear();
+  state.images = false;
+  state.resuming = null;
+  state.reopening = false;
+  $(".session-list").replaceChildren();
+  $(".empty").hidden = true;
+  $(".chat").replaceChildren();
+  renderCard(null);
+  $(".prompt-reason").textContent = "";
+  $(".prompt-reason").hidden = true;
+  $(".resume").hidden = true;
+  $(".composer").hidden = true;
+  renderUsage(null);
+  $(".since").textContent = "";
+  renderSince();
+  clearTimeout(toastTimer);
+  $(".toast").textContent = "";
+  $(".toast").hidden = true;
+  $(".title").textContent = state.openId ? "Session" : "Sessions";
+  renderUnseen();
+  fitInput();
+}
+
+/** While the page looks for the app again: the screen it was on, saying so, with nothing else. */
+function showWaiting() {
+  if (state.openId) {
+    showScreen("chat");
+    $(".composer").hidden = true;
+    $(".title").textContent = "Session";
+    $(".chat").replaceChildren(el("p", "loading", STATUS_TEXT[state.status]));
+  } else if (!$(".screen-list").hidden) {
+    renderList();
+  }
+  renderJumps();
+}
+
+/** The first list after reconnecting: the session open before is open again if it's still there,
+ *  with what was typed for it; else the list. */
+function reopened() {
+  state.reopening = false;
+  const held = draft;
+  draft = null;
+  if (!openRow()) {
+    closeSession();
+    return;
+  }
+  if (held?.sessionId === state.openId && !$(".prompt-input").value) {
+    $(".prompt-input").value = held.text;
+    fitInput();
+  }
 }
 
 const promptKey = text => text.replace(/\s+/g, " ").trim();
@@ -757,7 +846,10 @@ function renderUsage(u) {
   const box = $(".usage");
   const ok = u && Number.isFinite(u.percent) && Number.isFinite(u.dailyUsd);
   box.hidden = !ok;
-  if (!ok) return;
+  if (!ok) {
+    box.textContent = "";
+    return;
+  }
   box.textContent = `${Math.round(u.percent)}% of $${u.dailyUsd.toFixed(2)} today`;
   box.dataset.level = ["warn", "alert"].includes(u.level) ? u.level : "ok";
   box.title = "Today's spend, as a share of today's budget";
@@ -772,6 +864,7 @@ function onMessage(m) {
       noteNeeds(state.sessions);
       if (state.resuming && state.sessions.find(s => s.id === state.resuming)?.live) state.resuming = null;
       renderList();
+      if (state.reopening) reopened();
       if (state.openId) {
         const row = openRow();
         if (row) $(".title").textContent = row.name;
@@ -956,13 +1049,22 @@ const connection = new Connection({
     s.dataset.status = status;
     state.status = status;
     imagesStatus(status);
+    // Off the link, nothing from the app stays; what was typed waits for a reconnect, not an end.
+    if (status !== "connected") wipe({ keepDraft: status === "reconnecting" || status === "connecting" });
     renderMenu();
     renderLog();
     if (status === "unpaired") showScreen("unpaired");
     if (status === "connected" || status === "ended") $(".trouble").hidden = true;
+    if (status === "reconnecting" || status === "connecting") showWaiting();
     if (status === "connected") {
-      if (state.openId) connection.send({ type: "openSession", sessionId: state.openId });
-      else showScreen("list");
+      if (state.openId) {
+        // Fetched afresh, as nothing was kept; the first list says whether it's still there.
+        state.reopening = true;
+        openSession(state.openId);
+      } else {
+        $(".session-list").replaceChildren(el("p", "loading", "Loading…"));
+        showScreen("list");
+      }
     }
   },
   onMessage,
@@ -970,8 +1072,7 @@ const connection = new Connection({
   onEnded(reason) {
     closeViewer();
     state.openId = null;
-    renderSince();
-    renderUsage(null);
+    wipe();
     if (reason === "left") {
       showScreen("left");
       closeSoon();
@@ -1045,7 +1146,12 @@ $(".menu-update").addEventListener("click", async () => {
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") checkForUpdate(); });
 // Back online, or restored by the browser without a reload.
 window.addEventListener("online", checkForUpdate);
-window.addEventListener("pageshow", e => { if (e.persisted) checkForUpdate(); });
+window.addEventListener("pageshow", e => {
+  if (!e.persisted) return;
+  // Restored from the back/forward cache: still nothing from the app unless connected.
+  if (state.status === "ended") wipe();
+  checkForUpdate();
+});
 setInterval(checkForUpdate, UPDATE_CHECK_MS);
 checkForUpdate();
 

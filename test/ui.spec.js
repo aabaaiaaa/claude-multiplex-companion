@@ -206,16 +206,81 @@ test("answers several questions at once, one choice each", async ({ context }) =
   await expect.poll(() => lastOfType(desk, "answer")).toMatchObject({ cardId: "card-5", choice: { kind: "options", indices: [2, 1] } });
 });
 
-test("keeps a prompt and an answer that couldn't be sent while reconnecting", async ({ context }) => {
+// What the app sent and what was typed, none of which may be on the page while it isn't connected.
+const SECRETS = ["parser-work", "Add a test for the parser", "look at the parser first", "secret-card-summary", "of $12.40", "secret-toast", "half-typed note"];
+
+/** A session open with its conversation, a card, the usage readout, a toast and typed text. */
+async function filledIn(context) {
   const { desk, phone } = await paired(context, LIVE);
   await openFirst(phone, desk);
-  await sendCard(desk, { id: "card-7", kind: "permission", toolName: "Bash", summary: "ls", options: [{ label: "Yes" }, { label: "No" }] });
-  await expect(phone.locator(".card")).toBeVisible();
+  await expect(phone.locator(".chat .you")).toHaveText("Add a test for the parser");
+  // Typed before the card comes, which then holds the prompt box.
+  await phone.locator(".prompt-input").fill("half-typed note");
+  await sendCard(desk, { id: "card-7", kind: "permission", toolName: "Bash", summary: "secret-card-summary", options: [{ label: "Yes" }, { label: "No" }] });
+  await expect(phone.locator(".card")).toContainText("secret-card-summary");
+  await desk.evaluate(() => window.desk.send({ type: "usage", usage: { percent: 42, dailyUsd: 12.4, level: "ok" } }));
+  await expect(phone.locator(".usage")).toHaveText("42% of $12.40 today");
+  await desk.evaluate(() => window.desk.send({ type: "error", message: "secret-toast" }));
+  await expect(phone.locator(".toast")).toHaveText("secret-toast");
+  await expect(phone.locator(".title")).toHaveText("parser-work");
+  return { desk, phone };
+}
+
+/** Whether the page holds none of `SECRETS`: in its DOM, shown or not, or in the prompt box. */
+async function expectNothingShown(phone) {
+  const { text, value } = await phone.evaluate(() => ({ text: document.body.textContent, value: document.querySelector(".prompt-input").value }));
+  for (const s of SECRETS) expect(text, s).not.toContain(s);
+  expect(value).toBe("");
+}
+
+test("shows nothing from the app while reconnecting, then fetches it again and puts the typed text back", async ({ context }) => {
+  const { desk, phone } = await filledIn(context);
   await desk.evaluate(() => { window.desk.refuse = true; window.desk.closeConnection(); });
   await expect(phone.locator(".status")).toHaveText("Reconnecting…");
-  await phone.locator(".card button", { hasText: "Yes" }).click();
-  await expect(phone.locator(".toast")).toContainText("Not connected");
-  await expect(phone.locator(".card button", { hasText: "Yes" })).toBeEnabled();
+  // Still in the session, saying so, with none of it shown.
+  await expect(phone.locator(".screen-chat")).toBeVisible();
+  await expect(phone.locator(".chat")).toHaveText("Reconnecting…");
+  await expect(phone.locator(".composer")).toBeHidden();
+  await expect(phone.locator(".usage")).toBeHidden();
+  await expectNothingShown(phone);
+  const opened = (await deskReceived(desk)).filter(m => m.type === "openSession").length;
+  await desk.evaluate(() => { window.desk.refuse = false; });
+  await expect(phone.locator(".status")).toHaveText("Connected", { timeout: 30_000 });
+  await expect.poll(async () => (await deskReceived(desk)).filter(m => m.type === "openSession").length).toBe(opened + 1);
+  expect(await lastOfType(desk, "openSession")).toMatchObject({ sessionId: "session-1" });
+  await expect(phone.locator(".chat .you")).toHaveText("Add a test for the parser");
+  await expect(phone.locator(".title")).toHaveText("parser-work");
+  await expect(phone.locator(".prompt-input")).toHaveValue("half-typed note");
+});
+
+test("goes to the list after reconnecting when the open session has gone, dropping its typed text", async ({ context }) => {
+  const { desk, phone } = await filledIn(context);
+  await desk.evaluate(() => { window.desk.refuse = true; window.desk.closeConnection(); });
+  await expect(phone.locator(".status")).toHaveText("Reconnecting…");
+  await desk.evaluate(s => { window.desk.sessions = s; window.desk.refuse = false; }, LIVE.slice(1));
+  await expect(phone.locator(".status")).toHaveText("Connected", { timeout: 30_000 });
+  await expect(phone.locator(".screen-list")).toBeVisible();
+  await expect(phone.locator(".session-list li")).toHaveText(/docs/);
+  await expect(phone.locator(".prompt-input")).toHaveValue("");
+});
+
+test("shows nothing from the app, typed text included, once the app ends the pairing", async ({ context }) => {
+  const { desk, phone } = await filledIn(context);
+  await desk.evaluate(() => window.desk.send({ type: "goodbye", reason: "disconnected" }));
+  await expect(phone.locator(".screen-ended")).toBeVisible();
+  await expectNothingShown(phone);
+  await expect(phone.locator(".composer")).toBeHidden();
+  await expect(phone.locator(".title")).toHaveText("Sessions");
+});
+
+test("shows nothing from the app, typed text included, once disconnected from the menu", async ({ context }) => {
+  await context.addInitScript(() => { window.close = () => {}; });
+  const { phone } = await filledIn(context);
+  await phone.locator(".menu-button").click();
+  await phone.locator(".menu-disconnect").click();
+  await expect(phone.locator(".screen-left")).toBeVisible();
+  await expectNothingShown(phone);
+  await expect(phone.locator(".composer")).toBeHidden();
 });
 
 test("shows an error from the app", async ({ context }) => {

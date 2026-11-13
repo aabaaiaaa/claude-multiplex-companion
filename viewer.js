@@ -236,6 +236,10 @@ function hide() {
   if (!dialog.open) return;
   dialog.close();
   clearImage();
+  // The title is a file name from the app: none of it stays once closed.
+  dialog.querySelector(".viewer-title").textContent = "";
+  status.textContent = "";
+  actions.replaceChildren();
   if (savedScroll) {
     document.documentElement.style.overflow = savedScroll.overflow;
     window.scrollTo(savedScroll.x, savedScroll.y);

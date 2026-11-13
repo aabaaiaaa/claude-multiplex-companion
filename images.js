@@ -163,10 +163,14 @@ export function takeImageMessage(m) {
   }
 }
 
-/** The connection's status: one that isn't connected loses the image on its way. */
+/** The connection's status: one that isn't connected closes the viewer and forgets the request,
+ *  so nothing from the app stays on screen and pieces arriving late are ignored. */
 export function imagesStatus(status) {
-  if (status === "connected" || !current) return;
-  failed(requestOf(current));
+  if (status === "connected") return;
+  stopStallTimer();
+  current = null;
+  asking = null;
+  closeViewer();
 }
 
 /** The app's list of what it lets this phone do: without images, the one in flight won't come. */

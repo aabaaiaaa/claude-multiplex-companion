@@ -576,22 +576,23 @@ test("a missing piece shows that it couldn't be loaded, and Try again asks afres
   expect(second.id).not.toBe(first.id);
 });
 
-test("losing the connection mid-image offers Try again, which asks again once reconnected", async ({ context }) => {
+test("losing the connection mid-image closes the viewer, and pieces arriving late don't reopen it", async ({ context }) => {
   const { desk, phone } = await open(context, ["images"]);
-  const hash = await giveImage(desk, "shots/after.png", { size: 300_000, stopAfter: 1 });
+  await giveImage(desk, "shots/after.png", { size: 300_000, stopAfter: 1 });
   await show(desk, "Check", TEXT);
   await AFTER(phone).click();
   await expect(viewerStatus(phone)).toHaveText("Loading… 22%");
   await desk.evaluate(() => window.desk.closeConnection());
-  await expect(viewerStatus(phone)).toHaveText("Couldn't load the image.");
-  await expect(viewerButton(phone)).toHaveText("Try again");
-  await expect(phone.locator(".status")).toHaveText("Connected");
-  await desk.evaluate(() => { delete window.desk.images["shots/after.png"].stopAfter; });
-  await viewerButton(phone).click();
-  expect(await shownHash(phone)).toBe(hash);
-  const sent = await requests(desk);
-  expect(sent).toHaveLength(2);
-  expect(sent[1]).toEqual({ ...sent[0], id: expect.any(String) });
+  await expect(phone.locator(".image-viewer")).toBeHidden();
+  await expect(phone.locator(".image-viewer .viewer-title")).toHaveText("");
+  await expect(phone.locator(".status")).toHaveText("Connected", { timeout: 30_000 });
+  // The rest of the image comes over the new connection, for a request the page has dropped.
+  const [{ id }] = await requests(desk);
+  await desk.evaluate(id => window.desk.release(id), id);
+  await syncPoint(desk, phone);
+  await expect(phone.locator(".image-viewer")).toBeHidden();
+  await expect(phone.locator(".image-viewer img")).toBeHidden();
+  expect(await requests(desk)).toHaveLength(1);
 });
 
 test("the fixture's OneDrive-style path goes to the app and back unchanged", async ({ context }) => {

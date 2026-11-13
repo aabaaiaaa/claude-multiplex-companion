@@ -68,7 +68,8 @@ default), and `features` says when that changes. Only then does the page make th
 references in Claude's text tappable. A tap sends `openImage`; the app answers with one `image`,
 then its `imagePiece`s and `imageDone`. A cancelled or superseded request gets nothing more, not
 even a reply, so the page never waits on one and ignores anything late for an id it's no longer
-asking for. A connection lost while loading loses the image too; the page offers to ask again.
+asking for. A connection lost while loading loses the image too: the page closes the viewer and ignores
+anything still on its way for that id.
 An `error` message, or a `features` message without `"images"`, also ends a request in flight:
 the app won't send it, so the page sends `cancelImage` and shows the image couldn't be loaded.
 A request that hears nothing for 20 seconds (no `image` or `imagePiece` for it) is given up the
