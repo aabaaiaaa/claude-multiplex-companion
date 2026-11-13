@@ -59,6 +59,14 @@ function el(tag, cls, text) {
   return e;
 }
 
+/** The app's phone button icon, as the app draws it. */
+function phoneIcon() {
+  const i = el("span", "icon-phone");
+  i.setAttribute("role", "img");
+  i.setAttribute("aria-label", "phone");
+  return i;
+}
+
 function showScreen(name) {
   for (const s of document.querySelectorAll(".screen")) s.hidden = !s.classList.contains(`screen-${name}`);
   const inChat = name === "chat";
@@ -790,7 +798,9 @@ function onMessage(m) {
       setImages(m.features);
       if (desktopTooOld(m.appVersion)) {
         const has = typeof m.appVersion === "string" && m.appVersion ? `version ${m.appVersion}` : "a version it doesn't say";
-        $(".outdated-text").textContent = `This page needs claude-multiplex ${MIN_DESKTOP_VERSION} or later, and the app on your computer is ${has}. Update the app, then pair again from its phone button (📱).`;
+        $(".outdated-text").replaceChildren(
+          `This page needs claude-multiplex ${MIN_DESKTOP_VERSION} or later, and the app on your computer is ${has}. Update the app, then pair again from its phone button (`,
+          phoneIcon(), ").");
         connection.disconnect("outdated");
       }
       break;

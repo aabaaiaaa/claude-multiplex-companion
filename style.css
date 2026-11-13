@@ -283,3 +283,11 @@ fieldset { border: 0; margin: 0 0 10px; padding: 0; }
 }
 .version { margin: 0; padding: 4px 16px 6px; font-size: 0.6875rem; color: var(--muted); text-align: center; }
 [hidden] { display: none !important; }
+
+/* The app's phone button icon, drawn the same way: a text-coloured outline, by a mask. */
+.icon-phone {
+  display: inline-block; width: 1em; height: 1em; vertical-align: -0.15em;
+  background-color: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect x='4' y='1.5' width='8' height='13' rx='1.5' fill='none' stroke='black' stroke-width='1.4'/%3E%3Cline x1='7' y1='12.2' x2='9' y2='12.2' stroke='black' stroke-width='1.4' stroke-linecap='round'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect x='4' y='1.5' width='8' height='13' rx='1.5' fill='none' stroke='black' stroke-width='1.4'/%3E%3Cline x1='7' y1='12.2' x2='9' y2='12.2' stroke='black' stroke-width='1.4' stroke-linecap='round'/%3E%3C/svg%3E") center / contain no-repeat;
+}

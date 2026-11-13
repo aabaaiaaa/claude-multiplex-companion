@@ -299,6 +299,9 @@ for (const [appVersion, says] of [["0.24.3", "version 0.24.3"], ["", "a version 
     await expect(text).toContainText("needs claude-multiplex 0.25.0 or later");
     await expect(text).toContainText(says);
     await expect(text).toContainText("Update the app");
+    // The app's phone icon, not the coloured emoji.
+    await expect(text.locator(".icon-phone")).toHaveCount(1);
+    await expect(text).not.toContainText("📱");
     await expect.poll(async () => (await deskReceived(desk)).some(m => m.type === "disconnect")).toBe(true);
     await expect(phone.locator(".screen-list")).toBeHidden();
     // Forgotten, so the page waits for a new scan rather than trying the old app again.
