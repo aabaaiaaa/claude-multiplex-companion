@@ -1,7 +1,7 @@
 // The oldest desktop app this page works with. One page serves every app, so a change that needs
 // something new from the app raises this; an older app is then asked to update rather than
 // half-working.
-export const MIN_DESKTOP_VERSION = "0.25.0";
+export const MIN_DESKTOP_VERSION = "0.26.0";
 
 /** [major, minor, patch] from "1.2.3" (anything after is ignored), or null if it isn't one. */
 function parse(version) {

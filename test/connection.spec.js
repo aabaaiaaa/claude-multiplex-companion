@@ -288,7 +288,7 @@ test("suggests mobile data or another Wi-Fi when the connection stalls, and hide
 });
 
 // An empty version: the app couldn't read its own.
-for (const [appVersion, says] of [["0.24.3", "version 0.24.3"], ["", "a version it doesn't say"]]) {
+for (const [appVersion, says] of [["0.25.0", "version 0.25.0"], ["0.24.3", "version 0.24.3"], ["", "a version it doesn't say"]]) {
   test(`asks for an update and ends the pairing when the app is too old (${appVersion || "empty version"})`, async ({ context }) => {
     const id = deskId();
     const desk = await openDesk(context, id);
@@ -296,7 +296,7 @@ for (const [appVersion, says] of [["0.24.3", "version 0.24.3"], ["", "a version 
     const phone = await openPhone(context, id);
     await expect(phone.locator(".screen-outdated")).toBeVisible();
     const text = phone.locator(".outdated-text");
-    await expect(text).toContainText("needs claude-multiplex 0.25.0 or later");
+    await expect(text).toContainText("needs claude-multiplex 0.26.0 or later");
     await expect(text).toContainText(says);
     await expect(text).toContainText("Update the app");
     // The app's phone icon, not the coloured emoji.
@@ -317,7 +317,7 @@ test("works with an app at or past the minimum version", async ({ context }) => 
   const phone = await openPhone(context, id);
   await expect(phone.locator(".screen-list")).toBeVisible();
   await expect(phone.locator(".screen-outdated")).toBeHidden();
-  await expect(phone.locator(".version")).toContainText("for claude-multiplex 0.25.0+");
+  await expect(phone.locator(".version")).toContainText("for claude-multiplex 0.26.0+");
 });
 
 test("compares versions part by part", async ({ page }) => {
