@@ -2,10 +2,14 @@ import path from "node:path";
 
 const PEERJS = path.resolve("node_modules/peerjs/dist/peerjs.min.js");
 
-/** Serve the pinned PeerJS build locally, so tests need no internet. */
+export const PEERJS_URL = /unpkg\.com\/peerjs@1\.5\.5\/dist\/peerjs\.min\.js/;
+
+/** Serve the pinned PeerJS build locally, so tests need no internet; with the CORS header unpkg
+ *  sends, which the page's integrity check needs. */
 export async function routePeerjs(context) {
-  await context.route(/unpkg\.com\/peerjs@1\.5\.5\/dist\/peerjs\.min\.js/, route =>
-    route.fulfill({ path: PEERJS, contentType: "application/javascript" }));
+  await context.route(PEERJS_URL, route => route.fulfill({
+    path: PEERJS, contentType: "application/javascript", headers: { "Access-Control-Allow-Origin": "*" },
+  }));
 }
 
 let counter = 0;

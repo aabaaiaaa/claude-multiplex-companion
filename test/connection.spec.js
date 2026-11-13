@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { deskId, deskReceived, openDesk, openPhone, phoneLink, routePeerjs, TEST_CODE, TEST_SERVER } from "./helpers.js";
+import { deskId, deskReceived, openDesk, openPhone, PEERJS_URL, phoneLink, routePeerjs, TEST_CODE, TEST_SERVER } from "./helpers.js";
 
 test.beforeEach(async ({ context }) => { await routePeerjs(context); });
 
@@ -334,4 +334,24 @@ test("compares versions part by part", async ({ page }) => {
   expect(await tooOld("", "0.25.0")).toBe(true);
   expect(await tooOld(undefined, "0.25.0")).toBe(true);
   expect(await tooOld("dev", "0.25.0")).toBe(true);
+});
+
+test("loads PeerJS only if its bytes match the hash the page pins", async ({ context }) => {
+  const id = deskId();
+  await openDesk(context, id);
+  const phone = await openPhone(context, id);
+  await expect(phone.locator(".status")).toHaveText("Connected");
+  const tag = phone.locator('script[src*="unpkg.com/peerjs"]');
+  await expect(tag).toHaveAttribute("integrity", /^sha384-[A-Za-z0-9+/]{64}$/);
+  await expect(tag).toHaveAttribute("crossorigin", "anonymous");
+
+  // Other bytes at that address, as from a tampered CDN: the browser refuses to run them.
+  const tampered = await context.newPage();
+  await tampered.route(PEERJS_URL, route => route.fulfill({
+    contentType: "application/javascript", headers: { "Access-Control-Allow-Origin": "*" },
+    body: "window.tampered = true;",
+  }));
+  await tampered.goto(phoneLink(deskId()));
+  await expect.poll(() => tampered.evaluate(() => document.readyState)).toBe("complete");
+  expect(await tampered.evaluate(() => ({ ran: window.tampered === true, peer: typeof window.Peer }))).toEqual({ ran: false, peer: "undefined" });
 });
