@@ -73,7 +73,8 @@ exact version in `index.html`.
 ```sh
 npm install
 npm test          # Playwright, against a local PeerJS server and a scripted desktop peer
-npm run serve     # serves the page at http://localhost:8123/
+npm run serve         # serves the page at http://localhost:8123/
+npm run serve:https   # serves it over https, for the desktop app and a phone (see below)
 ```
 
 The tests use the installed Microsoft Edge on Windows, and Playwright's Chromium elsewhere (run
@@ -82,18 +83,26 @@ served from `node_modules`.
 
 ### Trying it against the desktop app
 
-1. Serve the page over https: the app takes only an https:// address. For example, with a local
-   certificate, `npx http-server . -p 8123 -c-1 -S -C cert.pem -K key.pem`.
-2. In the app, set **Settings → Advanced → Device pairing** to that address, such as
-   `https://localhost:8123/`, and set a pairing server: a PeerJS server over https, such as one
-   run with the `peer` package or its Docker image. The phone button shows in the top bar once
-   both are set. `CMX_COMPANION_URL` and `CMX_COMPANION_PEER_SERVER` override them for one run.
-3. Press the phone button (📱) in the top bar, then **Pair a phone**. Open the link it
-   shows in a desktop browser, or scan it with a phone on the same network (using your machine's
-   address instead of `localhost`).
+This is how to try a change on a real phone before it reaches `main`, which deploys at once.
+
+1. Run `npm run serve:https` (`PORT=8124 npm run serve:https` for another port). The app takes
+   only an https:// address, so it serves over https with a self-signed certificate it makes
+   on each run, valid for 7 days, for `localhost` and this computer's network addresses. The
+   certificate is kept in `.local-https/`, which git ignores. It prints the addresses to use.
+2. In the app, set **Settings → Advanced → Device pairing** to one of them:
+   `https://localhost:8123/` for a browser on this computer, or this computer's address on your
+   Wi-Fi for a phone. Set a pairing server too: a PeerJS server over https, such as one run with
+   the `peer` package or its Docker image. The phone button shows in the top bar once both are
+   set. `CMX_COMPANION_URL` and `CMX_COMPANION_PEER_SERVER` override them for one run.
+3. Press the phone button in the top bar, then **Pair a phone**. Scan the QR code with a phone
+   on the same network, or click the link under it to open the page in this computer's browser.
+4. The browser warns about the certificate the first time; accept it to go on. If a phone can't
+   load the page, check that it's on the same network and that the firewall lets Node.js accept
+   connections. When you're done, set Device pairing back to the deployed page.
 
 ## Deploying
 
 `.github/workflows/deploy.yml` publishes the page to GitHub Pages on every push to `main`. It
-writes `version.js` with the commit and date, and leaves the test files out of the site. In the
+writes `version.js` with the commit and date, and leaves the test files and `scripts/` out of
+the site. In the
 repository's **Settings → Pages**, set **Source** to **GitHub Actions**.

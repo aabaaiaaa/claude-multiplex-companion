@@ -30,7 +30,7 @@ jobs:
           echo "export const BUILD_INFO = { version: '${SHA}', date: '${DATE}' };" > version.js
 
       - name: Leave development files out of the site
-        run: rm -rf test package.json package-lock.json playwright.config.js .github
+        run: rm -rf test scripts package.json package-lock.json playwright.config.js .github
 
       - uses: actions/configure-pages@v5
 
