@@ -155,6 +155,9 @@ test("a long plain path wraps inside a phone-width chat", async ({ context }) =>
   await expect(phone.locator(".image-ref")).toHaveAttribute("data-ref", long);
   const widths = await phone.evaluate(() => ({ page: document.documentElement.scrollWidth, view: window.innerWidth }));
   expect(widths.page).toBeLessThanOrEqual(widths.view);
+  // Its wrapped lines start at the left, like the text around it, not centred as in a button.
+  const align = await phone.locator(".image-ref").evaluate(b => getComputedStyle(b).textAlign);
+  expect(["start", "left"]).toContain(align);
 });
 
 test("a fenced block never gets a button", async ({ context }) => {
