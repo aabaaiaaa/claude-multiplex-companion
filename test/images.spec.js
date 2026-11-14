@@ -45,7 +45,7 @@ test("formatText finds the same references as the app, for every fixture case", 
     const { formatText } = await import("/format.js");
     return cases.map(c => {
       const box = document.createElement("div");
-      box.append(...formatText(c.text, { images: true }));
+      box.append(...formatText(c.text, { images: true, plainPaths: true }));
       return {
         refs: [...box.querySelectorAll("button.image-ref")].map(b => b.dataset.ref),
         drawnAsCode: [...box.querySelectorAll("pre")].map(p => p.textContent).join(" "),
@@ -113,6 +113,48 @@ test("a features message adds or removes the buttons in the open chat", async ({
   await desk.evaluate(() => window.desk.send({ type: "features", features: [] }));
   await expect(phone.locator(".image-ref")).toHaveCount(0);
   await expect(phone.locator(".chat .claude code")).toHaveCount(2);
+});
+
+const PLAIN = "C:\\shots\\menu-800x600.png";
+const PLAIN_TEXT = `At 800×600 it scrolls: ${PLAIN}. And \`shots/after.png\`.`;
+
+test("a plain path is a button only for an app that names plainPaths", async ({ context }) => {
+  const { desk, phone } = await open(context, ["images"]);
+  await show(desk, "Check", PLAIN_TEXT);
+  const reply = phone.locator(".chat .claude");
+  await expect(reply.locator("button.image-ref")).toHaveCount(1);
+  await expect(reply.locator("button.image-ref")).toHaveAttribute("data-ref", "shots/after.png");
+  await expect(reply).toContainText(`scrolls: ${PLAIN}. And`);
+
+  await desk.evaluate(() => window.desk.send({ type: "features", features: ["images", "plainPaths"] }));
+  const plain = reply.locator("button.image-ref", { hasText: PLAIN });
+  await expect(plain).toHaveAttribute("data-ref", PLAIN);
+  // The full stop after it stays text, and nothing else is lost.
+  await expect(reply).toHaveText(`At 800×600 it scrolls: ${PLAIN}. And shots/after.png.`);
+  await expect(reply.locator("button.image-ref")).toHaveCount(2);
+
+  // plainPaths means nothing without images.
+  await desk.evaluate(() => window.desk.send({ type: "features", features: ["plainPaths"] }));
+  await expect(phone.locator(".image-ref")).toHaveCount(0);
+  await expect(reply).toHaveText(`At 800×600 it scrolls: ${PLAIN}. And shots/after.png.`);
+});
+
+test("tapping a plain path asks the app for it as written", async ({ context }) => {
+  const { desk, phone } = await open(context, ["images", "plainPaths", "something-newer"]);
+  await show(desk, "Check", PLAIN_TEXT);
+  await phone.locator(".image-ref", { hasText: PLAIN }).click();
+  await expect(phone.locator(".image-viewer .viewer-title")).toHaveText("menu-800x600.png");
+  await expect.poll(async () => (await deskReceived(desk)).find(m => m.type === "openImage")?.ref).toBe(PLAIN);
+});
+
+test("a long plain path wraps inside a phone-width chat", async ({ context }) => {
+  const { desk, phone } = await open(context, ["images", "plainPaths"]);
+  await phone.setViewportSize({ width: 360, height: 640 });
+  const long = "C:\\Users\\someone\\AppData\\Local\\Temp\\a-long-folder-name\\another-long-folder-name\\shot.png";
+  await show(desk, "Check", `Saved: ${long}`);
+  await expect(phone.locator(".image-ref")).toHaveAttribute("data-ref", long);
+  const widths = await phone.evaluate(() => ({ page: document.documentElement.scrollWidth, view: window.innerWidth }));
+  expect(widths.page).toBeLessThanOrEqual(widths.view);
 });
 
 test("a fenced block never gets a button", async ({ context }) => {

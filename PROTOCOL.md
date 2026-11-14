@@ -79,18 +79,32 @@ and bytes the browser can't show as an image.
 An image reference is a code span or a Markdown link target (`<...>` or bare) that ends in
 `.png`, `.jpg`, `.jpeg`, `.gif`, `.webp` or `.bmp`, isn't a URL, isn't led by `\`, `//` or
 `/??/` (a path with no drive, a network or device path, which the app never reads), and isn't
-inside a fenced code block. The page and the app find the same ones:
-`test/fixtures/image_refs.json` lists cases with the references each holds, and both sides test
-against an identical copy. A reference that isn't a full path (a drive letter, or a leading `/`)
-the app looks for by name, which can find none or several; the page then offers to ask Claude
-for the full path.
+inside a fenced code block. With `"plainPaths"` (see *Versions*), so is a full path written as
+plain text: led by a drive (`C:\`, `C:/`) or `/`, ending at a space, without the brackets,
+quotes, `*`, `_` or sentence punctuation around it. The page and the app find the same ones:
+`test/fixtures/image_refs.json` lists cases with the references each holds, with plain paths on,
+and both sides test against an identical copy. A reference that isn't a full path (a drive
+letter, or a leading `/`) the app looks for by name, which can find none or several; the page
+then offers to ask Claude for the full path.
 
 ## Versions
 
 One page serves every app, so the page says which apps it works with: `MIN_DESKTOP_VERSION` in
 `desktop-version.js`. On `welcome`, an app older than that, or one whose version is empty, gets
-a `disconnect`, and the page asks for the app to be updated. Raise the minimum whenever the page
-starts relying on something only a newer app sends, and leave it where it is otherwise.
+a `disconnect`, and the page asks for the app to be updated. Raise the minimum only when an
+older app would break with the page.
+
+What a newer app adds goes in `features` instead, so the page can use it without asking older
+apps to update. The page turns each one on only for an app that names it (`desktop-features.js`),
+and ignores names it doesn't know:
+
+| Feature | The page | First sent by |
+|---|---|---|
+| `images` | makes image references tappable and opens them | 0.26.0, while the app's image sharing setting is on |
+| `plainPaths` | counts plain full paths as image references too; only with `images` | the release after 0.26.1, alongside `images` |
+
+A page change that needs new app behaviour adds a name here, with the app change that sends it,
+and goes live whenever it's ready: apps that don't send the name carry on as before.
 
 ## Pairing link
 

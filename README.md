@@ -47,7 +47,9 @@ the PeerJS server that introduces them can't pose as either.
   or the browser goes to the background, with no new scan.
 - **Disconnect in the app, or closing it,** ends the pairing.
 - **An app too old for this page** gets an update request instead: the page names the oldest
-  version it works with (`desktop-version.js`) and ends the pairing.
+  version it works with (`desktop-version.js`) and ends the pairing. What newer apps add, such as
+  opening an image named by a plain path, the page uses only with an app that says it has it
+  (`desktop-features.js`), so an older app keeps working without it.
 - **Disconnect on the page** ends it too, and the page closes itself after 5 seconds. To connect
   again, scan a new code from the app: the page doesn't look for the app by itself.
 

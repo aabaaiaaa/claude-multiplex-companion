@@ -1,4 +1,5 @@
 import { Connection } from "./connection.js";
+import { appFeatures } from "./desktop-features.js";
 import { desktopTooOld, MIN_DESKTOP_VERSION } from "./desktop-version.js";
 import { formatText } from "./format.js";
 import { imagesAppError, imagesComposerChanged, imagesFeatures, imagesStatus, requestImage, setupImages, takeImageMessage } from "./images.js";
@@ -50,6 +51,8 @@ const state = {
   unseen: new Set(),
   /** Whether the app lets this phone open images; it says so in welcome, and again if that changes. */
   images: false,
+  /** Whether a full path written without backticks also counts as an image (desktop-features.js). */
+  plainPaths: false,
   /** Reconnected with a session open, until the first list says whether it's still there. */
   reopening: false,
 };
@@ -218,6 +221,7 @@ function wipe({ keepDraft = false } = {}) {
   state.lastActiveAt = 0;
   state.unseen.clear();
   state.images = false;
+  state.plainPaths = false;
   state.resuming = null;
   state.reopening = false;
   $(".session-list").replaceChildren();
@@ -322,7 +326,7 @@ function renderChat({ keepPlace = false } = {}) {
       if (item.kind === "text") {
         const text = el("div", "claude");
         text.dataset.turn = String(turn.index);
-        text.append(...formatText(item.text, { images: state.images }));
+        text.append(...formatText(item.text, { images: state.images, plainPaths: state.plainPaths }));
         chat.append(text);
       }
       else if (item.kind === "tools") {
@@ -351,9 +355,10 @@ function renderChat({ keepPlace = false } = {}) {
 /** Takes the app's list of what it lets this phone do; a change redraws the chat, so the
  *  image buttons appear or go. */
 function setImages(features) {
-  const images = Array.isArray(features) && features.includes("images");
-  if (images === state.images) return;
+  const { images, plainPaths } = appFeatures(features);
+  if (images === state.images && plainPaths === state.plainPaths) return;
   state.images = images;
+  state.plainPaths = plainPaths;
   if (state.openId) renderChat({ keepPlace: true });
 }
 
@@ -1105,7 +1110,7 @@ setTextSize(SIZES.includes(savedSize) ? savedSize : 1, false);
 /** How often to look for a newer deploy while the page is open. */
 const UPDATE_CHECK_MS = 5 * 60_000;
 /** Everything the page loads from its own site, fetched afresh before reloading. */
-const PAGE_FILES = ["index.html", "app.js", "auth.js", "connection.js", "desktop-version.js", "format.js", "images.js", "style.css", "version.js", "viewer.js"];
+const PAGE_FILES = ["index.html", "app.js", "auth.js", "connection.js", "desktop-features.js", "desktop-version.js", "format.js", "images.js", "style.css", "version.js", "viewer.js"];
 
 /** The deployed version, read past the browser's cache; null if it can't be read. */
 async function deployedVersion() {

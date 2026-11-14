@@ -29,7 +29,8 @@ const plainCode = text => split(text, CODE, t => element("code", t), t => [docum
 
 // What can hold an image reference: a code span, or a link whose target is <...> (may hold spaces
 // and a closing bracket) or bare (runs to the next closing bracket). Groups: code, link text,
-// angled target, bare target. The same rule as the app's, tested against fixtures/image_refs.json.
+// angled target, bare target. With plain paths, so can the text around them. The same rule as the
+// app's, tested against fixtures/image_refs.json.
 const SPAN_OR_LINK = /`([^`\n]+)`|\[([^\]\n]*)\]\((?:<([^>\n]*)>|([^)\n]*))\)/g;
 const IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"];
 const URL_SCHEME = /^[a-z][a-z0-9+.-]*:\/\//i;
@@ -41,6 +42,52 @@ function isImageRef(c) {
   return IMAGE_EXTENSIONS.some(ext => lower.endsWith(ext)) && !URL_SCHEME.test(c) && !NOT_LOCAL.test(c);
 }
 
+// What may wrap a plain path, written without backticks: brackets, quotes and emphasis before it,
+// those and sentence punctuation after it. It's led by a drive (`C:\`, `C:/`) or `/`, and ends
+// at a space.
+const PLAIN_LEAD = "([{\"'<*_";
+const PLAIN_TRAIL = ".,;:!?)]}\"'>*_";
+const PLAIN_START = /^(?:[A-Za-z]:[\\/]|\/)/;
+
+/** Where `word`'s path starts and ends, once what wraps it is left out. */
+function unwrap(word) {
+  let a = 0;
+  let b = word.length;
+  while (a < b && PLAIN_LEAD.includes(word[a])) a += 1;
+  while (b > a && PLAIN_TRAIL.includes(word[b - 1])) b -= 1;
+  return [a, b];
+}
+
+const plainImage = p => PLAIN_START.test(p) && isImageRef(p);
+
+/** Every plain image path the app finds in `text`, by its rule: outside fenced blocks, in the text
+ *  around code spans and links. The page draws its pieces apart (bold, table cells), so a path
+ *  found in a piece becomes a button only if it's also here, as the app would read it. */
+function plainImageRefs(text) {
+  const out = new Set();
+  const add = gap => {
+    for (const word of gap.split(/\s+/)) {
+      const [a, b] = unwrap(word);
+      if (plainImage(word.slice(a, b))) out.add(word.slice(a, b));
+    }
+  };
+  let inFence = false;
+  for (const line of text.split("\n")) {
+    if (line.startsWith("```")) {
+      inFence = !inFence;
+      continue;
+    }
+    if (inFence) continue;
+    let at = 0;
+    for (const m of line.matchAll(SPAN_OR_LINK)) {
+      add(line.slice(at, m.index));
+      at = m.index + m[0].length;
+    }
+    add(line.slice(at));
+  }
+  return out;
+}
+
 function imageButton(ref) {
   const b = document.createElement("button");
   b.type = "button";
@@ -49,12 +96,32 @@ function imageButton(ref) {
   return b;
 }
 
-/** Like `plainCode`, but a code span or link that names an image becomes a button. */
-function withImages(text) {
+/** `text`, with each plain path in `plain` (the app's, or null for none) as a button. */
+function withPlainPaths(text, plain) {
+  if (!plain?.size) return [document.createTextNode(text)];
+  const out = [];
+  let at = 0;
+  for (const m of text.matchAll(/\S+/g)) {
+    const [a, b] = unwrap(m[0]);
+    const p = m[0].slice(a, b);
+    if (!plain.has(p)) continue;
+    if (m.index + a > at) out.push(document.createTextNode(text.slice(at, m.index + a)));
+    const button = imageButton(p);
+    button.textContent = p;
+    out.push(button);
+    at = m.index + b;
+  }
+  if (at < text.length) out.push(document.createTextNode(text.slice(at)));
+  return out;
+}
+
+/** Like `plainCode`, but a code span or link that names an image becomes a button, as does a
+ *  plain path in `images.plain`. */
+function withImages(text, images) {
   const out = [];
   let at = 0;
   for (const m of text.matchAll(SPAN_OR_LINK)) {
-    if (m.index > at) out.push(document.createTextNode(text.slice(at, m.index)));
+    if (m.index > at) out.push(...withPlainPaths(text.slice(at, m.index), images.plain));
     at = m.index + m[0].length;
     if (m[1] !== undefined) {
       if (isImageRef(m[1])) {
@@ -75,14 +142,15 @@ function withImages(text) {
       out.push(...inline(m[0]));
     }
   }
-  if (at < text.length) out.push(document.createTextNode(text.slice(at)));
+  if (at < text.length) out.push(...withPlainPaths(text.slice(at), images.plain));
   return out;
 }
 
-const code = (text, images) => (images ? withImages(text) : plainCode(text));
+const code = (text, images) => (images ? withImages(text, images) : plainCode(text));
 
-/** Bold and code, where bold can hold code (`**the `x` file**`) but code never holds bold. */
-function inline(text, images = false) {
+/** Bold and code, where bold can hold code (`**the `x` file**`) but code never holds bold.
+ *  `images`: null, or `{ plain }` to make image references buttons. */
+function inline(text, images = null) {
   // Bold is found with each code span blanked out, so a `*` inside code is never a marker and
   // every match starts and ends outside code. With images, links are blanked too, so bold never
   // straddles a button's edge.
@@ -177,13 +245,13 @@ function fencedLines(text) {
 }
 
 /** Text outside code blocks: tables as tables, everything else as lines of bold and code.
- *  `hidden`, with images on: per line, whether the app's scan counts it as fenced (no buttons). */
-function blocks(text, hidden) {
+ *  `hidden`, with `images`: per line, whether the app's scan counts it as fenced (no buttons). */
+function blocks(text, hidden, images) {
   const lines = text.split("\n");
   const out = [];
-  const shown = i => !!hidden && !hidden[i];
+  const shown = i => (hidden && !hidden[i] ? images : null);
   let plain = [];
-  let plainShown = false;
+  let plainShown = null;
   const flush = () => {
     if (plain.length) out.push(...inline(plain.join("\n"), plainShown));
     plain = [];
@@ -212,14 +280,16 @@ function blocks(text, hidden) {
 }
 
 /** The nodes that show `text` with its formatting applied. `images`: a reference to an image
- *  becomes a button to open it. */
-export function formatText(text, { images = false } = {}) {
+ *  becomes a button to open it. `plainPaths`, with images: so does a full path written without
+ *  backticks, for an app that reads those too (desktop-features.js). */
+export function formatText(text, { images = false, plainPaths = false } = {}) {
   const hidden = images ? fencedLines(text) : [];
+  const found = images ? { plain: plainPaths ? plainImageRefs(text) : null } : null;
   const lineAt = at => text.slice(0, at).split("\n").length - 1;
   return split(text, FENCE, t => {
     const pre = document.createElement("pre");
     pre.className = "code-block";
     pre.append(element("code", t));
     return pre;
-  }, (t, at) => blocks(t, images ? hidden.slice(lineAt(at)) : null));
+  }, (t, at) => blocks(t, images ? hidden.slice(lineAt(at)) : null, found));
 }
