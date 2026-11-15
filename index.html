@@ -41,8 +41,15 @@
       computer, try mobile data or a different Wi-Fi network: some networks stop devices on them reaching each other.
       <button type="button" class="trouble-details">Show connection details</button></p>
 
-    <p class="lock-setup" role="status" hidden><span class="lock-setup-text"></span>
-      <button type="button" class="lock-setup-button">Set up screen lock</button></p>
+    <section class="screen screen-enrol" hidden>
+      <p class="left-title">Set up the screen lock</p>
+      <p>claude-multiplex needs this phone's screen lock (its PIN, pattern, fingerprint or face) before
+        it shows anything here. Each time this page reconnects, it asks for it again.</p>
+      <button type="button" class="enrol-button">Set up screen lock</button>
+      <p class="enrol-no-lock" hidden>This phone has no screen lock this page can use. Set one up in the
+        phone's settings, then open this page again.</p>
+      <p class="enrol-note" role="status"></p>
+    </section>
 
     <section class="screen screen-locked" hidden>
       <p class="left-title">Unlock to reconnect</p>

@@ -101,16 +101,15 @@ main { padding: 12px 16px 24px; }
 .badge-pending { color: var(--accent); border-color: var(--accent); font-weight: 600; }
 .badge-new { color: var(--accent-text); background: var(--accent); border-color: var(--accent); font-weight: 600; }
 .empty { color: var(--muted); }
-.trouble, .lock-setup {
+.trouble {
   margin: 0 0 12px; padding: 10px 12px; border-radius: 8px;
   background: var(--pending); border: 1px solid var(--accent);
 }
-.lock-setup-button, .unlock {
-  display: block; margin-top: 8px; border: 1px solid var(--accent); border-radius: 6px;
+.enrol-button, .unlock {
+  display: block; margin: 0 0 12px; border: 1px solid var(--accent); border-radius: 6px;
   background: var(--accent); color: var(--accent-text); padding: 8px 16px; font-weight: 600;
 }
-.unlock { margin: 0 0 12px; }
-.lock-setup-button:disabled, .unlock:disabled { opacity: 0.6; }
+.enrol-button:disabled, .unlock:disabled { opacity: 0.6; }
 
 .chat { display: flex; flex-direction: column; gap: 8px; padding-bottom: 8px; }
 /* The row above the oldest turn shown, while there are earlier ones to fetch. */

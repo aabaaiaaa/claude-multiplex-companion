@@ -16,12 +16,13 @@ const STATUS_TEXT = {
   ended: "Not connected",
   unpaired: "Not paired",
   locked: "Locked",
+  enrolling: "Locked",
 };
 
 const ENDED_TEXT = {
   replaced: "This page was replaced: this phone connected to the app again, from another tab or browser. To use this one instead, scan a new code in claude-multiplex.",
   refused: "The app turned this code down: it may have expired, or been used already. Each code works once, for under a minute. Scan a new one in claude-multiplex.",
-  lockRefused: "The app didn't let this phone back in: its screen lock couldn't be checked. To connect again, end the pairing in claude-multiplex, then scan a new code.",
+  lockRefused: "The app didn't let this phone in: its screen lock couldn't be checked. To connect again, end the pairing in claude-multiplex, then scan a new code.",
   unverified: "Whatever answered couldn't prove it's the app this phone paired with, so this page stopped. Scan a new code in claude-multiplex.",
   disconnected: "Pairing ended in the app. To connect again, scan the code in claude-multiplex.",
   unavailable: "Pairing ended: the app isn't reachable, or it was closed. To connect again, scan the code in claude-multiplex.",
@@ -253,7 +254,7 @@ function showWaiting() {
     $(".composer").hidden = true;
     $(".title").textContent = "Session";
     $(".chat").replaceChildren(el("p", "loading", STATUS_TEXT[state.status]));
-  } else if (!$(".screen-list").hidden || !$(".screen-locked").hidden) {
+  } else if (!$(".screen-list").hidden || !$(".screen-locked").hidden || !$(".screen-enrol").hidden) {
     showScreen("list");
     renderList();
   }
@@ -944,7 +945,6 @@ function onMessage(m) {
       break;
     case "welcome":
       setImages(m.features);
-      screenLock.features(m.features);
       if (desktopTooOld(m.appVersion)) {
         const has = typeof m.appVersion === "string" && m.appVersion ? `version ${m.appVersion}` : "a version it doesn't say";
         $(".outdated-text").replaceChildren(
@@ -956,10 +956,6 @@ function onMessage(m) {
     case "features":
       setImages(m.features);
       imagesFeatures(m.features);
-      screenLock.features(m.features);
-      break;
-    case "enrolled":
-      screenLock.enrolled(m);
       break;
     case "usage":
       renderUsage(m.usage);
@@ -1111,11 +1107,12 @@ const connection = new Connection({
     imagesStatus(status);
     screenLock.status(status);
     // Off the link, nothing from the app stays; what was typed waits for a reconnect, not an end.
-    if (status !== "connected") wipe({ keepDraft: ["reconnecting", "connecting", "locked"].includes(status) });
+    if (status !== "connected") wipe({ keepDraft: ["reconnecting", "connecting", "locked", "enrolling"].includes(status) });
     renderMenu();
     renderLog();
     if (status === "unpaired") showScreen("unpaired");
     if (status === "locked") showScreen("locked");
+    if (status === "enrolling") showScreen("enrol");
     if (status === "connected" || status === "ended") $(".trouble").hidden = true;
     if (status === "reconnecting" || status === "connecting") showWaiting();
     if (status === "connected") {
@@ -1219,5 +1216,5 @@ checkForUpdate();
 
 $(".version").textContent = [BUILD_INFO.version, BUILD_INFO.date, `for claude-multiplex ${MIN_DESKTOP_VERSION}+`].filter(Boolean).join(" · ");
 setupImages({ send: m => connection.send(m), promptBlock, submitPrompt });
-const screenLock = setupScreenLock({ connection, toast, log: logLine });
+const screenLock = setupScreenLock({ connection, log: logLine });
 connection.start();

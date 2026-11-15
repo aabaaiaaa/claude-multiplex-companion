@@ -98,7 +98,7 @@
     noAuth: false,
     /** Prove the app with the wrong secret, as an impostor would. */
     badProof: false,
-    /** The app's screen lock setting: it takes an `enrol`, and once one is in, asks for the lock. */
+    /** The app's screen lock setting: a phone sets the lock up before it's let in, then needs it. */
     requireUV: false,
     /** The phone's credential, once its `enrol` passed. */
     uvCred: null,
@@ -176,19 +176,27 @@
       desk.deviceKey = issued;
       desk.code = null;
     }
+    c.send({ v: 1, type: "authed", proof: appProof, ...(issued ? { deviceKey: issued } : {}) });
+    // As the app does: a phone asked to set up its screen lock gets nothing more until it has.
+    if (c.askedEnrol) c.enrolling = true;
+    else letIn(c);
+  }
+
+  function letIn(c) {
     c.authed = true;
     conn = c;
     desk.connections += 1;
-    c.send({ v: 1, type: "authed", proof: appProof, ...(issued ? { deviceKey: issued } : {}) });
   }
 
   async function enrol(c, m) {
     const answer = body => c.send({ v: 1, type: "enrolled", ...body });
-    if (!desk.requireUV) return answer({ ok: false, reason: "not asked" });
-    if (desk.uvCred && !c.passedUV) return answer({ ok: false, reason: "already set up" });
+    if (!c.enrolling) return answer({ ok: false, reason: "not asked" });
     const r = await checkEnrolment(m);
     if (typeof r === "string") return answer({ ok: false, reason: r });
     desk.uvCred = r;
+    c.enrolling = false;
+    c.passedUV = true;
+    letIn(c);
     answer({ ok: true });
   }
 
@@ -204,10 +212,19 @@
       }
       nonce = newSecret();
       c.askedUV = desk.requireUV ? desk.uvCred : null;
-      c.send({ v: 1, type: "challenge", nonce, ...(c.askedUV ? { requireUV: true } : {}) });
+      c.askedEnrol = desk.requireUV && !desk.uvCred;
+      c.send({ v: 1, type: "challenge", nonce, ...(c.askedUV ? { requireUV: true } : c.askedEnrol ? { enrolUV: true } : {}) });
     });
     c.on("data", m => {
       desk.received.push(m);
+      if (c.enrolling) {
+        if (m.type === "enrol") enrol(c, m);
+        else {
+          c.send({ v: 1, type: "goodbye", reason: "refused" });
+          c.close();
+        }
+        return;
+      }
       if (!c.authed) {
         if (m.type === "auth" && nonce) check(c, m, nonce);
         return;

@@ -45,11 +45,12 @@ the PeerJS server that introduces them can't pose as either.
   the kinds of address each side offered, never the addresses.
 - **While the app keeps the pairing open,** the page reconnects by itself after the phone locks
   or the browser goes to the background, with no new scan.
-- **The phone's screen lock,** when the app's setting for it is on: the page offers to set it up
-  while connected, and from then on a reconnect waits on **Unlock**, which asks for the phone's
-  PIN, pattern, fingerprint or face. The app checks the answer, so someone else picking up the
-  unlocked phone later, or opening the page from its history, can't get back in without the lock.
-  Cancelling leaves Unlock to tap again.
+- **The phone's screen lock,** when the app's setting for it is on: before the app shows the page
+  anything, the page has to **Set up screen lock**, and from then on a reconnect waits on
+  **Unlock**, which asks for the phone's PIN, pattern, fingerprint or face. There's no way past
+  either without it. The app checks the answer, so someone else picking up the unlocked phone
+  later, or opening the page from its history, can't get back in without the lock. Cancelling
+  leaves the button to tap again. A phone with no screen lock can't connect while it's on.
 - **Disconnect in the app, or closing it,** ends the pairing.
 - **An app too old for this page** gets an update request instead: the page names the oldest
   version it works with (`desktop-version.js`) and ends the pairing. What newer apps add, such as

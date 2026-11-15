@@ -7,8 +7,6 @@ export const FEATURES = Object.freeze({
   images: "images",
   /** A full path written without backticks also counts as an image reference. Only with images. */
   plainPaths: "plainPaths",
-  /** The app asks for this phone's screen lock before a reconnect, once the phone has set it up. */
-  userVerification: "userVerification",
 });
 
 /** For each name in FEATURES, whether the app's `features` list holds it. Anything else in the
@@ -17,5 +15,5 @@ export function appFeatures(features) {
   const list = Array.isArray(features) ? features : [];
   const has = name => list.includes(name);
   const images = has(FEATURES.images);
-  return { images, plainPaths: images && has(FEATURES.plainPaths), userVerification: has(FEATURES.userVerification) };
+  return { images, plainPaths: images && has(FEATURES.plainPaths) };
 }

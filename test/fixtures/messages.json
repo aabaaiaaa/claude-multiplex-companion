@@ -139,6 +139,12 @@
     },
     {
       "v": 1,
+      "type": "challenge",
+      "nonce": "bm9uY2Utdg",
+      "enrolUV": true
+    },
+    {
+      "v": 1,
       "type": "authed",
       "proof": "V_PUjTlPAJExww1PqbcLvonbQTK69ga0LH1brNWFPP0",
       "deviceKey": "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA"
@@ -157,13 +163,6 @@
       "type": "features",
       "features": [
         "images"
-      ]
-    },
-    {
-      "v": 1,
-      "type": "features",
-      "features": [
-        "userVerification"
       ]
     },
     {

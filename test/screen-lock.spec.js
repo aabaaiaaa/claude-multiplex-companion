@@ -17,27 +17,28 @@ async function screenLock(page) {
   };
 }
 
-/** A desk whose screen lock setting is on, and a phone paired with it that has a screen lock. */
+/** A desk whose screen lock setting is on, and a phone with a screen lock that has scanned its
+ *  code: the app has let it past the key check, and waits for it to set the lock up. */
 async function pairWithLock(context) {
   const id = deskId();
   const desk = await openDesk(context, id);
-  await desk.evaluate(() => { window.desk.requireUV = true; window.desk.features = ["userVerification"]; });
+  await desk.evaluate(() => { window.desk.requireUV = true; });
   const phone = await context.newPage();
   const lock = await screenLock(phone);
   await phone.goto(phoneLink(id));
-  await expect(phone.locator(".status")).toHaveText("Connected");
+  await expect(phone.locator(".screen-enrol")).toBeVisible();
   return { desk, phone, lock };
 }
 
 const savedPairing = phone => phone.evaluate(() => JSON.parse(localStorage.getItem("cmx-companion-pairing")));
 /** How each of the app's screen lock checks went: null for passed, else why not. */
 const challenges = desk => desk.evaluate(() => window.desk.uvChecks);
+const sentTypes = async desk => (await deskReceived(desk)).map(m => m.type);
 
 async function setUp(desk, phone) {
-  await expect(phone.locator(".lock-setup")).toBeVisible();
-  await phone.locator(".lock-setup-button").click();
-  await expect(phone.locator(".toast")).toContainText("Screen lock set up");
-  await expect(phone.locator(".lock-setup")).toBeHidden();
+  await phone.locator(".enrol-button").click();
+  await expect(phone.locator(".status")).toHaveText("Connected");
+  await expect(phone.locator(".screen-list")).toBeVisible();
   expect(await desk.evaluate(() => !!window.desk.uvCred)).toBe(true);
 }
 
@@ -51,10 +52,17 @@ test("makes the screen-lock challenge as the desktop app does, by the shared tes
   expect(result.challenge).toBe(result.v.challenge);
 });
 
-test("sets up the screen lock when the app asks, then needs it to reconnect", async ({ context }) => {
+test("sets the screen lock up as it pairs, before the app shows anything, then needs it to reconnect", async ({ context }) => {
   const { desk, phone, lock } = await pairWithLock(context);
-  await expect(phone.locator(".lock-setup-text")).toContainText("asks for this phone's screen lock");
+  // Past the key check, but nothing from the app yet, and no way on without the screen lock.
+  await expect(phone.locator(".status")).toHaveText("Locked");
+  await expect(phone.locator(".screen-list")).toBeHidden();
+  await phone.waitForTimeout(300);
+  expect(await sentTypes(desk), "no hello before the screen lock").toEqual(["auth"]);
+  expect(await desk.evaluate(() => window.desk.connections)).toBe(0);
+
   await setUp(desk, phone);
+  expect(await sentTypes(desk)).toEqual(["auth", "enrol", "hello"]);
   expect(await lock.count()).toBe(1);
   const saved = await savedPairing(phone);
   expect(saved.credentialId).toMatch(/^[\w-]+$/);
@@ -71,8 +79,6 @@ test("sets up the screen lock when the app asks, then needs it to reconnect", as
   const second = (await auths())[1];
   expect(second).toMatchObject({ kind: "device", webauthn: { credentialId: saved.credentialId } });
   expect(await challenges(desk)).toEqual([null]);
-  // Passed with the lock, so nothing more to set up.
-  await expect(phone.locator(".lock-setup")).toBeHidden();
   await phone.locator(".menu-button").click();
   await phone.locator(".menu-details").click();
   await expect(phone.locator(".diagnostics-log")).toContainText("answered with this phone's key and screen lock");
@@ -88,6 +94,41 @@ test("asks for the lock again after the page is reopened, and keeps the session 
   await phone.locator(".unlock").click();
   await expect(phone.locator(".status")).toHaveText("Connected");
   await expect.poll(() => desk.evaluate(() => window.desk.connections)).toBe(2);
+});
+
+test("stays on the setup while the screen lock isn't passed, sending nothing, and goes on once it is", async ({ context }) => {
+  const { desk, phone, lock } = await pairWithLock(context);
+  await lock.verified(false);
+  await phone.locator(".enrol-button").click();
+  await expect(phone.locator(".enrol-note")).toHaveText("Not set up. Tap Set up screen lock to try again.");
+  await expect(phone.locator(".enrol-button")).toBeEnabled();
+  expect(await sentTypes(desk)).toEqual(["auth"]);
+  await lock.verified(true);
+  await setUp(desk, phone);
+});
+
+test("stays on the setup when the app can't use what the phone made, and goes on once it can", async ({ context }) => {
+  const { desk, phone } = await pairWithLock(context);
+  // As a phone that skipped its lock: the app wants it checked.
+  await phone.evaluate(() => {
+    const real = navigator.credentials.create.bind(navigator.credentials);
+    navigator.credentials.create = async options => {
+      navigator.credentials.create = real;
+      const cred = await real(options);
+      const r = cred.response;
+      const data = new Uint8Array(r.getAuthenticatorData());
+      data[32] &= ~0x04;
+      r.getAuthenticatorData = () => data.buffer;
+      return cred;
+    };
+  });
+  await phone.locator(".enrol-button").click();
+  await expect(phone.locator(".enrol-note")).toContainText("The app couldn't use this phone's screen lock");
+  await expect(phone.locator(".screen-enrol")).toBeVisible();
+  await expect(phone.locator(".enrol-button")).toBeEnabled();
+  expect((await savedPairing(phone)).credentialId).toBeUndefined();
+  expect(await sentTypes(desk)).toEqual(["auth", "enrol"]);
+  await setUp(desk, phone);
 });
 
 test("stays on Unlock while the screen lock isn't passed, sending nothing, and connects once it is", async ({ context }) => {
@@ -130,8 +171,7 @@ test("answers with its key alone, as before, for an app that doesn't ask for the
   await screenLock(phone);
   await phone.goto(phoneLink(id));
   await expect(phone.locator(".status")).toHaveText("Connected");
-  await phone.waitForTimeout(500);
-  await expect(phone.locator(".lock-setup")).toBeHidden();
+  await expect(phone.locator(".screen-enrol")).toBeHidden();
   await desk.evaluate(() => window.desk.closeConnection());
   await expect.poll(() => desk.evaluate(() => window.desk.connections), { timeout: 30_000 }).toBe(2);
   await expect(phone.locator(".status")).toHaveText("Connected");
@@ -141,29 +181,18 @@ test("answers with its key alone, as before, for an app that doesn't ask for the
   expect((await savedPairing(phone)).credentialId).toBeUndefined();
 });
 
-test("reconnects with its key alone until it has set the screen lock up", async ({ context }) => {
-  const { desk, phone } = await pairWithLock(context);
-  await expect(phone.locator(".lock-setup")).toBeVisible();
-  await desk.evaluate(() => window.desk.closeConnection());
-  await expect.poll(() => desk.evaluate(() => window.desk.connections), { timeout: 30_000 }).toBe(2);
-  await expect(phone.locator(".status")).toHaveText("Connected");
-  await expect(phone.locator(".screen-locked")).toBeHidden();
-  // Still offered on the new connection.
-  await expect(phone.locator(".lock-setup")).toBeVisible();
-});
-
-test("offers the setup once the app starts asking for it while connected, and stops when it stops", async ({ context }) => {
+test("sets the screen lock up on its next reconnect once the app turns the setting on", async ({ context }) => {
   const id = deskId();
   const desk = await openDesk(context, id);
   const phone = await context.newPage();
   await screenLock(phone);
   await phone.goto(phoneLink(id));
   await expect(phone.locator(".status")).toHaveText("Connected");
-  await expect(phone.locator(".lock-setup")).toBeHidden();
-  await desk.evaluate(() => { window.desk.requireUV = true; window.desk.send({ type: "features", features: ["userVerification"] }); });
-  await expect(phone.locator(".lock-setup")).toBeVisible();
-  await desk.evaluate(() => { window.desk.requireUV = false; window.desk.send({ type: "features", features: [] }); });
-  await expect(phone.locator(".lock-setup")).toBeHidden();
+  // As the app does on turning the setting on: it closes a phone that didn't pass the lock.
+  await desk.evaluate(() => { window.desk.requireUV = true; window.desk.closeConnection(); });
+  await expect(phone.locator(".screen-enrol")).toBeVisible({ timeout: 30_000 });
+  await expect(phone.locator(".screen-list")).toBeHidden();
+  await setUp(desk, phone);
 });
 
 test("says so when this phone has no screen lock the page can use", async ({ context }) => {
@@ -172,32 +201,11 @@ test("says so when this phone has no screen lock the page can use", async ({ con
   });
   const id = deskId();
   const desk = await openDesk(context, id);
-  await desk.evaluate(() => { window.desk.requireUV = true; window.desk.features = ["userVerification"]; });
+  await desk.evaluate(() => { window.desk.requireUV = true; });
   const phone = await context.newPage();
   await phone.goto(phoneLink(id));
-  await expect(phone.locator(".lock-setup-text")).toContainText("this phone has none this page can use");
-  await expect(phone.locator(".lock-setup-button")).toBeHidden();
-});
-
-test("keeps the offer up when the app can't use what the phone made", async ({ context }) => {
-  const { desk, phone } = await pairWithLock(context);
-  // As a phone that skipped its lock: the app wants it checked.
-  await desk.evaluate(() => { window.desk.uvCred = null; });
-  await phone.evaluate(() => {
-    const real = navigator.credentials.create.bind(navigator.credentials);
-    navigator.credentials.create = async options => {
-      const cred = await real(options);
-      const r = cred.response;
-      const data = new Uint8Array(r.getAuthenticatorData());
-      data[32] &= ~0x04;
-      r.getAuthenticatorData = () => data.buffer;
-      return cred;
-    };
-  });
-  await phone.locator(".lock-setup-button").click();
-  await expect(phone.locator(".toast")).toContainText("couldn't use this phone's screen lock");
-  await expect(phone.locator(".lock-setup")).toBeVisible();
-  await expect(phone.locator(".lock-setup-button")).toBeEnabled();
-  expect((await savedPairing(phone)).credentialId).toBeUndefined();
-  expect(await desk.evaluate(() => window.desk.uvCred)).toBeNull();
+  await expect(phone.locator(".screen-enrol")).toBeVisible();
+  await expect(phone.locator(".enrol-no-lock")).toBeVisible();
+  await expect(phone.locator(".enrol-button")).toBeHidden();
+  expect(await sentTypes(desk)).toEqual(["auth"]);
 });

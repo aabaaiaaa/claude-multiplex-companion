@@ -1,7 +1,7 @@
 // The page's side of the connection to the desktop app (see PROTOCOL.md).
 
 import { negotiatedFingerprints, proof, sameProof } from "./auth.js";
-import { checkScreenLock, uvChallenge } from "./screen-lock.js";
+import { checkScreenLock, createScreenLock, uvChallenge } from "./screen-lock.js";
 
 /** What this page shows beyond the base protocol, told to the app in `hello` so it sends only
  *  what the page can show (PROTOCOL.md). */
@@ -128,11 +128,12 @@ export function peerOptions(server, stun) {
 }
 
 /**
- * Statuses: "unpaired", "connecting", "connected", "reconnecting", "ended", and "locked" (the app
- * asks for the phone's screen lock before it reconnects; `unlock()` answers).
+ * Statuses: "unpaired", "connecting", "connected", "reconnecting", "ended", "locked" (the app
+ * asks for the phone's screen lock before it reconnects; `unlock()` answers) and "enrolling" (the
+ * app needs the screen lock set up before it lets this page in; `enrolScreenLock()` answers).
  * `onEnded(reason)` gets "left" (disconnected from this page), "outdated" (the app is too old for
  * this page), "refused" (the app turned down the pairing check, as for an expired code),
- * "lockRefused" (it turned down a reconnect that had to pass the screen lock),
+ * "lockRefused" (it turned down a connection that had to pass or set up the screen lock),
  * "unverified" (whatever answered couldn't prove it's the app paired with), "disconnected",
  * "replaced" or "unavailable".
  * `onTrouble()` runs when a direct connection didn't open in time.
@@ -170,8 +171,9 @@ export class Connection {
   }
 
   /** Answers the app's challenge with the code or the device key, bound to this connection. When
-   *  the app asks for the screen lock on a reconnect, it waits for `unlock()` instead. */
-  async answerChallenge(conn, nonce, requireUV) {
+   *  the app asks for the screen lock on a reconnect, it waits for `unlock()` instead. `enrolUV`:
+   *  once the app has proved itself, the page sets the screen lock up before anything else. */
+  async answerChallenge(conn, nonce, requireUV, enrolUV) {
     // Marked at once, so a second challenge on this connection is ignored.
     conn.challenge = { nonce };
     const kind = this.pairing.code ? "pair" : "device";
@@ -184,7 +186,7 @@ export class Connection {
       return;
     }
     const uv = requireUV && kind === "device";
-    conn.challenge = { nonce, secret, fps, uv };
+    conn.challenge = { nonce, secret, fps, uv, enrol: enrolUV && !uv };
     if (uv) {
       // The phone's prompt needs a tap on Safari, so the page asks for one rather than prompting.
       this.log("Screen lock: the app asks for it before this phone reconnects");
@@ -221,9 +223,37 @@ export class Connection {
     await this.sendAuth(conn, "device", webauthn);
   }
 
-  /** Whether this connection passed the screen lock check, so it may register a new credential. */
-  get passedScreenLock() {
-    return this.conn?.authed === true && this.conn.challenge?.uv === true;
+  /** Sets up the phone's screen lock, from a tap, when the app needs it before it lets this page
+   *  in. Throws, leaving the button to tap again, if the person cancels, the phone can't, or the
+   *  app turns the credential down. */
+  async enrolScreenLock() {
+    const conn = this.conn;
+    if (!conn?.enrolling || conn.enrolWait || this.status !== "enrolling") return;
+    const made = await createScreenLock();
+    if (conn !== this.conn || !conn.enrolling) return;
+    const answer = new Promise((resolve, reject) => { conn.enrolWait = { resolve, reject, credentialId: made.credentialId }; });
+    this.send({ type: "enrol", ...made });
+    await answer;
+  }
+
+  /** The app's answer to `enrol`: taken, and this page is let in; or not, to try again. */
+  enrolled(conn, m) {
+    const wait = conn.enrolWait;
+    if (!wait) return;
+    conn.enrolWait = null;
+    // "not asked": the app turned its setting off meanwhile, and lets this page in without.
+    if (m.ok === true || m.reason === "not asked") {
+      conn.enrolling = false;
+      if (m.ok === true) {
+        this.saveScreenLock(wait.credentialId);
+        this.log("Screen lock: set up; reconnecting now asks for it");
+      }
+      this.letIn(conn);
+      wait.resolve();
+      return;
+    }
+    this.log(`Screen lock: the app didn't take it (${m.reason ?? "no reason"})`);
+    wait.reject(new Error("refused"));
   }
 
   /** Keeps the credential the app took, with the pairing, for the next reconnect. */
@@ -249,11 +279,22 @@ export class Connection {
       this.pairing = { peer: this.pairing.peer, server: this.pairing.server, stun: this.pairing.stun, deviceKey: m.deviceKey };
       store(() => localStorage.setItem(PAIRING_KEY, JSON.stringify(this.pairing)));
     }
-    conn.authed = true;
     clearTimeout(this.challengeTimer);
     this.log("Pairing check: passed");
     this.unavailable = 0;
     this.attempt = 0;
+    if (c.enrol) {
+      // The phone's prompt needs a tap on Safari, so the page asks for one rather than prompting.
+      conn.enrolling = true;
+      this.log("Screen lock: the app needs it set up before it shows anything");
+      this.setStatus("enrolling");
+      return;
+    }
+    this.letIn(conn);
+  }
+
+  letIn(conn) {
+    conn.authed = true;
     this.setStatus("connected");
     this.send({ type: "hello", clientId: clientId(), features: PAGE_FEATURES });
   }
@@ -312,12 +353,16 @@ export class Connection {
         if (conn !== this.conn || !m || m.v !== 1) return;
         if (m.type === "goodbye" && m.reason === "refused") {
           this.log("Pairing check: refused by the app");
-          this.end(conn.challenge?.uv ? "lockRefused" : "refused");
+          this.end(conn.challenge?.uv || conn.challenge?.enrol ? "lockRefused" : "refused");
+          return;
+        }
+        if (conn.enrolling) {
+          if (m.type === "enrolled") this.enrolled(conn, m);
           return;
         }
         if (!conn.authed) {
           if (m.type === "challenge" && typeof m.nonce === "string" && !conn.challenge) {
-            this.answerChallenge(conn, m.nonce, m.requireUV === true).catch(() => this.end("unverified"));
+            this.answerChallenge(conn, m.nonce, m.requireUV === true, m.enrolUV === true).catch(() => this.end("unverified"));
           } else if (m.type === "authed" && typeof m.proof === "string") {
             this.checkApp(conn, m).catch(() => this.end("unverified"));
           }
