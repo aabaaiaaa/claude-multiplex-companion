@@ -168,6 +168,7 @@
       "type": "conversation",
       "sessionId": "session-1",
       "mtimeMs": 1700000000000,
+      "lastResponseAtMs": 1699989200000,
       "entries": [
         {
           "kind": "turn",

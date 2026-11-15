@@ -692,16 +692,20 @@ const replyKey = entries => {
   return turn ? `${turn.index}:${turn.items.length}:${JSON.stringify(turn.items.at(-1) ?? null)}` : "";
 };
 
-/** A conversation for the open session: a changed reply restarts the clock. */
-function noteConversation(entries, mtimeMs) {
+/** A conversation for the open session: a changed reply restarts the clock. `repliedAtMs`: when
+ *  the app says Claude last replied, by the transcript, so a message that arrives late (the page
+ *  was asleep) still dates it right. An app that doesn't send it leaves the first reply dated by
+ *  the transcript's last write, and each later one by when it arrived here. */
+function noteConversation(entries, mtimeMs, repliedAtMs) {
   const key = replyKey(entries);
-  if (key === state.responseKey) return;
   const now = Date.now();
+  const changed = key !== state.responseKey;
   const first = state.responseKey === null;
   state.responseKey = key;
-  // The first one is what was there already: dated by the transcript's last write.
-  state.lastResponseAt = first && typeof mtimeMs === "number" ? Math.min(now, mtimeMs) : now;
-  if (!first) state.lastActiveAt = now;
+  // Never ahead of now, for a PC clock running ahead of this one.
+  if (Number.isFinite(repliedAtMs)) state.lastResponseAt = Math.min(now, repliedAtMs);
+  else if (changed) state.lastResponseAt = first && typeof mtimeMs === "number" ? Math.min(now, mtimeMs) : now;
+  if (changed && !first) state.lastActiveAt = now;
   renderSince();
 }
 
@@ -880,7 +884,7 @@ function onMessage(m) {
       if (!Array.isArray(m.entries)) break;
       settleGhosts(m.sessionId, m.entries);
       if (m.sessionId !== state.openId) break;
-      noteConversation(m.entries, m.mtimeMs);
+      noteConversation(m.entries, m.mtimeMs, m.lastResponseAtMs);
       takeLiveWindow(m.entries, m.hasEarlier);
       renderChat();
       break;

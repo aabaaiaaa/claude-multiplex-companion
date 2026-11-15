@@ -786,6 +786,38 @@ test("says how long since Claude's last reply once things go quiet", async ({ co
   await expect(since).toBeHidden();
 });
 
+test("dates Claude's last reply by when the app says it came, not by when it arrived here", async ({ context }) => {
+  const id = deskId();
+  const desk = await openDesk(context, id);
+  await desk.evaluate(s => { window.desk.sessions = s; }, LIVE);
+  const phone = await context.newPage();
+  await phone.clock.install();
+  await phone.goto(phoneLink(id));
+  await expect(phone.locator(".status")).toHaveText("Connected");
+  await openFirst(phone, desk);
+  const since = phone.locator(".since");
+  const deskNow = () => desk.evaluate(() => Date.now());
+  const reply = (text, repliedAt) => desk.evaluate(([t, at]) => window.desk.send({ type: "conversation", sessionId: "session-1",
+    mtimeMs: Date.now(), lastResponseAtMs: at, entries: [{ kind: "turn", index: 0, prompt: "Go", items: [{ kind: "text", text: t }] }] }),
+    [text, repliedAt]);
+  // The first, though the transcript was written just now (a prompt since, say).
+  await reply("First.", (await deskNow()) - 5 * 60_000);
+  await expect(since).toHaveText("Last response from Claude 5 minutes ago");
+  // A reply from 3 minutes before it was sent, reaching the phone 2 minutes late, as after it was asleep.
+  const sentAt = await deskNow();
+  await phone.clock.fastForward(2 * 60_000);
+  await reply("Second.", sentAt - 3 * 60_000);
+  await expect(phone.locator(".chat .claude")).toHaveText("Second.");
+  await expect(since).toBeHidden();
+  await phone.clock.fastForward(11_000);
+  await expect(since).toHaveText("Last response from Claude 5 minutes ago");
+  // A time ahead of the phone's, from a PC clock running fast, counts as now.
+  await reply("Third.", (await deskNow()) + 10 * 60_000);
+  await expect(phone.locator(".chat .claude")).toHaveText("Third.");
+  await phone.clock.fastForward(11_000);
+  await expect(since).toHaveText(/^Last response from Claude 1[12] seconds ago$/);
+});
+
 test("clears a pending prompt stored differently, and any sent before one that's arrived", async ({ context }) => {
   const { desk, phone } = await paired(context, LIVE);
   await openFirst(phone, desk);
