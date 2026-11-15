@@ -9,7 +9,10 @@
     {
       "v": 1,
       "type": "hello",
-      "clientId": "phone-7f3a"
+      "clientId": "phone-7f3a",
+      "features": [
+        "planCards"
+      ]
     },
     {
       "v": 1,
@@ -267,6 +270,29 @@
       "type": "prompt",
       "sessionId": "session-1",
       "card": null
+    },
+    {
+      "v": 1,
+      "type": "prompt",
+      "sessionId": "session-1",
+      "card": {
+        "id": "card-3",
+        "kind": "plan",
+        "plan": "## Add a parser test\n\n1. Add a case for an empty line.\n2. Run the tests.",
+        "cut": false,
+        "options": [
+          {
+            "label": "Yes, and use auto mode"
+          },
+          {
+            "label": "Yes, manually approve edits"
+          },
+          {
+            "label": "Tell Claude what to change",
+            "input": true
+          }
+        ]
+      }
     },
     {
       "v": 1,

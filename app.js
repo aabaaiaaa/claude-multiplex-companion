@@ -483,6 +483,46 @@ function permissionCard(card) {
   return box;
 }
 
+/** Claude's plan, and the menu Claude Code shows for it as the app read it off the screen: each
+ *  choice a button, and the feedback entry (`input`) a text box. */
+function planCard(card) {
+  const box = el("div");
+  box.append(el("p", "card-title", "Claude's plan"));
+  const plan = el("div", "plan");
+  plan.append(...formatText(card.plan));
+  box.append(plan);
+  if (card.cut) box.append(el("p", "card-body plan-cut", "The plan is longer than this. The rest is in the app."));
+  card.options.forEach((o, index) => {
+    if (o.input) {
+      const other = el("form", "other");
+      const input = el("input", "other-input");
+      input.placeholder = o.label;
+      input.setAttribute("aria-label", o.label);
+      const send = el("button", "other-send", "Send");
+      send.type = "submit";
+      other.append(input, send);
+      other.addEventListener("submit", e => {
+        e.preventDefault();
+        const text = input.value.trim();
+        if (text) answer(card, { kind: "text", text });
+      });
+      box.append(other);
+      return;
+    }
+    const b = el("button", "option");
+    b.type = "button";
+    b.append(optionLabel(o));
+    b.addEventListener("click", () => answer(card, { kind: "option", index }));
+    box.append(b);
+  });
+  return box;
+}
+
+/** A card this page doesn't know, from a newer app: it's answered there. */
+function unknownCard() {
+  return el("p", "card-body", "Answer this prompt in the app.");
+}
+
 function optionLabel(o) {
   const text = el("span", "option-text");
   text.append(el("span", "option-label", o.label));
@@ -557,6 +597,8 @@ function renderCard(card) {
   if (!card) return;
   if (card.kind === "permission") box.append(permissionCard(card));
   else if (card.kind === "confirm") box.append(confirmCard(card));
+  else if (card.kind === "plan") box.append(planCard(card));
+  else if (card.kind !== "question" || !Array.isArray(card.questions)) box.append(unknownCard());
   else if (card.questions.length === 1 && !card.questions[0].multiSelect) box.append(singleQuestion(card, card.questions[0]));
   else box.append(choiceQuestions(card));
   if (state.answered.has(card.id)) for (const b of box.querySelectorAll("button, input")) b.disabled = true;

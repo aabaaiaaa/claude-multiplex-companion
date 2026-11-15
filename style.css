@@ -200,6 +200,12 @@ button:disabled, textarea:disabled, input:disabled { opacity: 0.5; }
   white-space: pre-wrap; overflow-wrap: anywhere;
 }
 .choices { display: flex; flex-wrap: wrap; gap: 8px; }
+/* The plan scrolls on its own, so its options stay in reach under it. */
+.plan {
+  margin: 0 0 10px; padding: 8px; border-radius: 6px; background: var(--panel);
+  max-height: 30vh; overflow-y: auto; white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.plan-cut { font-size: 0.8125rem; color: var(--muted); }
 .choice-no { background: var(--panel); color: var(--danger); border: 1px solid var(--danger); }
 .option {
   display: block; width: 100%; text-align: left; margin-bottom: 6px;

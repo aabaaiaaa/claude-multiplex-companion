@@ -180,6 +180,58 @@ test("answers a single-choice question with one tap, or with your own words", as
   await expect.poll(() => lastOfType(desk, "answer")).toMatchObject({ cardId: "card-3", choice: { kind: "text", text: "Call it parseRow" } });
 });
 
+const planCard = (id, extra = {}) => ({
+  id, kind: "plan", plan: "## Add a parser test\n\n1. Add a case for an **empty** line.\n2. Run the tests.", cut: false,
+  options: [{ label: "Yes, and use auto mode" }, { label: "Yes, manually approve edits" }, { label: "Tell Claude what to change", input: true }],
+  ...extra,
+});
+
+test("answers Claude's plan with one of its options, or with feedback", async ({ context }) => {
+  const { desk, phone } = await paired(context, LIVE);
+  await openFirst(phone, desk);
+  await sendCard(desk, planCard("plan-1"));
+  const card = phone.locator(".card");
+  await expect(card.locator(".card-title")).toHaveText("Claude's plan");
+  await expect(card.locator(".plan")).toContainText("1. Add a case for an empty line.");
+  // Formatted as Claude's replies are.
+  await expect(card.locator(".plan strong")).toHaveText("empty");
+  await expect(card.locator(".plan-cut")).toHaveCount(0);
+  await expect(phone.locator(".prompt-input")).toBeDisabled();
+  // The choices are buttons; the feedback entry is a text box, not a button.
+  await expect(card.locator("button.option")).toHaveText(["Yes, and use auto mode", "Yes, manually approve edits"]);
+  await expect(card.locator(".other-input")).toHaveAttribute("placeholder", "Tell Claude what to change");
+  await card.locator("button.option", { hasText: "Yes, manually approve edits" }).click();
+  await expect.poll(() => lastOfType(desk, "answer")).toMatchObject({ cardId: "plan-1", choice: { kind: "option", index: 1 } });
+  await expect(card.locator("button.option").first()).toBeDisabled();
+
+  await sendCard(desk, planCard("plan-2"));
+  await card.locator(".other-send").click();
+  // Nothing typed, nothing sent.
+  expect((await lastOfType(desk, "answer")).cardId).toBe("plan-1");
+  await card.locator(".other-input").fill("Test the parser's errors too");
+  await card.locator(".other-send").click();
+  await expect.poll(() => lastOfType(desk, "answer")).toMatchObject({ cardId: "plan-2", choice: { kind: "text", text: "Test the parser's errors too" } });
+});
+
+test("says when the plan is longer than it shows, and keeps the options in reach under a long one", async ({ context }) => {
+  const { desk, phone } = await paired(context, LIVE);
+  await openFirst(phone, desk);
+  await sendCard(desk, planCard("plan-3", { plan: Array.from({ length: 200 }, (_, n) => `Step ${n}.`).join("\n"), cut: true }));
+  const card = phone.locator(".card");
+  await expect(card.locator(".plan-cut")).toHaveText("The plan is longer than this. The rest is in the app.");
+  // The plan scrolls on its own: the first option shows without scrolling the card.
+  await expect(card.locator("button.option").first()).toBeInViewport();
+  const plan = await card.locator(".plan").evaluate(e => ({ scroll: e.scrollHeight, client: e.clientHeight }));
+  expect(plan.scroll).toBeGreaterThan(plan.client);
+});
+
+test("says to answer in the app a card it doesn't know, from a newer app", async ({ context }) => {
+  const { desk, phone } = await paired(context, LIVE);
+  await openFirst(phone, desk);
+  await sendCard(desk, { id: "card-x", kind: "somethingNew", options: [] });
+  await expect(phone.locator(".card")).toHaveText("Answer this prompt in the app.");
+});
+
 test("answers a multi-select question with the ticked options", async ({ context }) => {
   const { desk, phone } = await paired(context, LIVE);
   await openFirst(phone, desk);

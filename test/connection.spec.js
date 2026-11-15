@@ -12,6 +12,8 @@ test("connects to the desktop and says hello", async ({ context }) => {
   const hello = (await deskReceived(desk)).find(m => m.type === "hello");
   expect(hello).toMatchObject({ v: 1, type: "hello" });
   expect(typeof hello.clientId).toBe("string");
+  // What it shows beyond the base protocol, so the app sends it plan cards.
+  expect(hello.features).toEqual(["planCards"]);
 });
 
 /** Keeps each page's RTCPeerConnections, so a test can put one in the state a lost network leaves. */

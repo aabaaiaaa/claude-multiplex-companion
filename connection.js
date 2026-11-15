@@ -2,6 +2,10 @@
 
 import { negotiatedFingerprints, proof, sameProof } from "./auth.js";
 
+/** What this page shows beyond the base protocol, told to the app in `hello` so it sends only
+ *  what the page can show (PROTOCOL.md). */
+export const PAGE_FEATURES = Object.freeze(["planCards"]);
+
 export const PAIRING_KEY = "cmx-companion-pairing";
 export const CLIENT_KEY = "cmx-companion-client";
 
@@ -201,7 +205,7 @@ export class Connection {
     this.unavailable = 0;
     this.attempt = 0;
     this.setStatus("connected");
-    this.send({ type: "hello", clientId: clientId() });
+    this.send({ type: "hello", clientId: clientId(), features: PAGE_FEATURES });
   }
 
   /** This connection's two certificate fingerprints, from the DTLS link itself: from this
