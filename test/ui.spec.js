@@ -986,7 +986,9 @@ test("jumps up to the start of Claude's last reply, and down to the end", async 
   const replyTop = () => start.evaluate(e => e.getBoundingClientRect().top);
   const headerBottom = () => phone.locator(".top").evaluate(e => e.getBoundingClientRect().bottom);
 
-  // Up at the top, above the last response: only the way down shows.
+  // Up at the top, above the last response: only the way down shows. Once the reply is in, as
+  // a short page counts the top as the end and the reply's arrival would scroll down.
+  await expect(start).toBeVisible();
   await phone.evaluate(() => window.scrollTo(0, 0));
   await expect(down).toBeVisible();
   await expect(up).toBeHidden();
