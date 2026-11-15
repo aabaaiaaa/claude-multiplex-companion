@@ -989,9 +989,12 @@ test("keeps what you're reading while scrolled up, even as the window moves on",
   const { desk, phone } = await paired(context, LIVE);
   await openFirst(phone, desk);
   await liveWindow(desk, 30, 39);
+  // Scrolled up only once they're shown: a scroll before then is undone when they arrive.
+  await expect(phone.locator(".chat .you")).toHaveCount(10);
   await phone.evaluate(() => window.scrollTo(0, 0));
   await liveWindow(desk, 32, 41);
   // Turns 30 and 31 left the window but stay above it, so nothing vanishes mid-read.
+  await expect(phone.locator(".chat .you").last()).toHaveText("Prompt 41");
   const shown = await prompts(phone);
   expect(shown[0]).toBe("Prompt 30");
   expect(shown.at(-1)).toBe("Prompt 41");
