@@ -25,11 +25,41 @@ A wrong, spent or expired code gets `goodbye` `refused`. `auth.js` holds the cod
 `authVector` in the fixtures is a known answer both sides test against. With no `challenge`
 within 8 s the page connects again, as for any stalled connection.
 
+## Screen lock
+
+With `"userVerification"` (see *Versions*), the app can make the phone pass its own screen lock
+(PIN, pattern, fingerprint or face) before a reconnect is let in. A page can't read the lock, so
+it uses a WebAuthn credential that needs user verification, on the phone's own (platform)
+authenticator, and the app, not the page, checks what the phone signs. `screen-lock.js` holds
+the page's side.
+
+1. **Setting it up.** While connected to an app that names `"userVerification"`, on a
+   connection that didn't pass the screen lock, the page offers to set it up. A tap makes the
+   credential (`rp.id` is the page's host, ES256 only, no attestation) and sends `enrol`. The app
+   checks it and answers `enrolled`. On `ok`, the page keeps the credential's id with the
+   pairing. The app answers `"already set up"` when it holds a credential and this connection
+   didn't pass it, and `"not asked"` while its setting is off.
+2. **Reconnecting.** Once the app holds a credential, its `challenge` carries `requireUV: true`.
+   On a `"device"` reconnect the page then shows **Unlock**, as Safari lets a page ask for the
+   lock only from a tap. The tap asks the phone, and `auth` carries `webauthn` alongside the
+   proof. The WebAuthn challenge is SHA-256 over these lines joined by `\n`:
+   `cmx-companion uv v1`, the nonce, the app's certificate fingerprint and the page's,
+   base64url, so a signature fits only the link it was made on. `uvVector` in the fixtures is a
+   known answer both sides test against. The app checks the signature against the key it was
+   given, the origin and site, that the phone checked its lock, and that the signature count
+   rises. A cancelled or failed lock check sends nothing: Unlock stays, and the app waits
+   60 s, then the page connects again. A reconnect the app turns down ends the pairing, as a
+   refused key does.
+
+Until the phone has set it up, the app takes its key alone. An app that doesn't name
+`"userVerification"` never sends `requireUV`, and the page answers as before.
+
 ## Page → app
 
 | type | fields |
 |---|---|
-| `auth` | `kind`, `proof`: see *The pairing check* |
+| `auth` | `kind`, `proof`: see *The pairing check*; and `webauthn`: `{credentialId, authenticatorData, clientDataJSON, signature}`, each base64url, when the `challenge` had `requireUV`: see *Screen lock* |
+| `enrol` | `credentialId`, `publicKey` (SPKI, as `getPublicKey()` gives it), `alg` (`-7`), `authenticatorData`, `clientDataJSON`, each base64url but `alg`: the phone's new screen-lock credential. Only with `userVerification` |
 | `hello` | `clientId`, a random id this page keeps in `localStorage`; `features`, what this page shows beyond the base protocol (`PAGE_FEATURES` in `connection.js`, see *Versions*) |
 | `listSessions` | none |
 | `openSession` | `sessionId`: the app then sends `conversation` and `prompt` for it until another `openSession` or `closeSession` |
@@ -46,7 +76,8 @@ within 8 s the page connects again, as for any stalled connection.
 
 | type | fields |
 |---|---|
-| `challenge` | `nonce`: see *The pairing check* |
+| `challenge` | `nonce`: see *The pairing check*; `requireUV: true` when the app wants the screen lock with a `"device"` answer: see *Screen lock* |
+| `enrolled` | `ok`, and `reason` when not: the app's answer to `enrol` |
 | `authed` | `proof`, and `deviceKey` after a `"pair"`: see *The pairing check* |
 | `welcome` | `deviceId`, `appVersion`: the app's version, such as `"0.25.0"`, or empty if the app couldn't read it, `features`: what the app lets this phone do, see *Images* |
 | `features` | `features`: the same list as in `welcome`, sent again whenever it changes |
@@ -102,6 +133,7 @@ and ignores names it doesn't know:
 |---|---|---|
 | `images` | makes image references tappable and opens them | 0.26.0, while the app's image sharing setting is on |
 | `plainPaths` | counts plain full paths as image references too; only with `images` | the release after 0.26.1, alongside `images` |
+| `userVerification` | offers to set up the screen lock, and asks for it when `challenge` says `requireUV` (see *Screen lock*) | the release after 0.26.1, while the app's screen lock setting is on |
 
 The other way, the page names what it shows in `hello`'s `features`, so a newer app sends a newer card only to a page that can show it. An app that doesn't know a name ignores it:
 

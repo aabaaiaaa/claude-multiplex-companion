@@ -45,6 +45,11 @@ the PeerJS server that introduces them can't pose as either.
   the kinds of address each side offered, never the addresses.
 - **While the app keeps the pairing open,** the page reconnects by itself after the phone locks
   or the browser goes to the background, with no new scan.
+- **The phone's screen lock,** when the app's setting for it is on: the page offers to set it up
+  while connected, and from then on a reconnect waits on **Unlock**, which asks for the phone's
+  PIN, pattern, fingerprint or face. The app checks the answer, so someone else picking up the
+  unlocked phone later, or opening the page from its history, can't get back in without the lock.
+  Cancelling leaves Unlock to tap again.
 - **Disconnect in the app, or closing it,** ends the pairing.
 - **An app too old for this page** gets an update request instead: the page names the oldest
   version it works with (`desktop-version.js`) and ends the pairing. What newer apps add, such as
@@ -62,7 +67,9 @@ prompts, spend or images. While it reconnects, the page says so in place of the 
 showing, then fetches everything again. What you'd typed in the prompt box is put back once that
 session is open again, and dropped if it has gone; an ended pairing drops it. The page stores only
 its settings (text size, keep screen on, buzz) and, until the pairing ends, the key that lets it
-reconnect.
+reconnect and the id of its screen-lock credential, if it set one up. The credential itself is
+kept by the phone, which may list it with its passkeys as "claude-multiplex phone"; the page
+can't remove it from there, but once the pairing ends nothing uses it.
 
 The PeerJS script from unpkg carries an `integrity` hash, so the browser won't run any other
 bytes in its place.

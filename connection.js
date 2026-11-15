@@ -1,6 +1,7 @@
 // The page's side of the connection to the desktop app (see PROTOCOL.md).
 
 import { negotiatedFingerprints, proof, sameProof } from "./auth.js";
+import { checkScreenLock, uvChallenge } from "./screen-lock.js";
 
 /** What this page shows beyond the base protocol, told to the app in `hello` so it sends only
  *  what the page can show (PROTOCOL.md). */
@@ -89,7 +90,8 @@ export function readPairing(hash) {
   const saved = store(() => JSON.parse(localStorage.getItem(PAIRING_KEY) ?? "null"));
   const server = saved && usableServer(saved.server);
   if (server && typeof saved.peer === "string" && typeof saved.deviceKey === "string") {
-    return { peer: saved.peer, server, stun: stunServers(saved.stun), deviceKey: saved.deviceKey };
+    const credentialId = typeof saved.credentialId === "string" ? { credentialId: saved.credentialId } : {};
+    return { peer: saved.peer, server, stun: stunServers(saved.stun), deviceKey: saved.deviceKey, ...credentialId };
   }
   store(() => localStorage.removeItem(PAIRING_KEY));
   return null;
@@ -126,9 +128,11 @@ export function peerOptions(server, stun) {
 }
 
 /**
- * Statuses: "unpaired", "connecting", "connected", "reconnecting", "ended".
+ * Statuses: "unpaired", "connecting", "connected", "reconnecting", "ended", and "locked" (the app
+ * asks for the phone's screen lock before it reconnects; `unlock()` answers).
  * `onEnded(reason)` gets "left" (disconnected from this page), "outdated" (the app is too old for
  * this page), "refused" (the app turned down the pairing check, as for an expired code),
+ * "lockRefused" (it turned down a reconnect that had to pass the screen lock),
  * "unverified" (whatever answered couldn't prove it's the app paired with), "disconnected",
  * "replaced" or "unavailable".
  * `onTrouble()` runs when a direct connection didn't open in time.
@@ -165,8 +169,9 @@ export class Connection {
     this.connect();
   }
 
-  /** Answers the app's challenge with the code or the device key, bound to this connection. */
-  async answerChallenge(conn, nonce) {
+  /** Answers the app's challenge with the code or the device key, bound to this connection. When
+   *  the app asks for the screen lock on a reconnect, it waits for `unlock()` instead. */
+  async answerChallenge(conn, nonce, requireUV) {
     // Marked at once, so a second challenge on this connection is ignored.
     conn.challenge = { nonce };
     const kind = this.pairing.code ? "pair" : "device";
@@ -178,9 +183,54 @@ export class Connection {
       this.end("unverified");
       return;
     }
-    conn.challenge = { nonce, secret, fps };
-    this.send({ type: "auth", kind, proof: await proof(secret, "phone", nonce, fps.app, fps.phone) });
-    this.log(`Pairing check: answered with ${kind === "pair" ? "the code" : "this phone's key"}`);
+    const uv = requireUV && kind === "device";
+    conn.challenge = { nonce, secret, fps, uv };
+    if (uv) {
+      // The phone's prompt needs a tap on Safari, so the page asks for one rather than prompting.
+      this.log("Screen lock: the app asks for it before this phone reconnects");
+      this.setStatus("locked");
+      return;
+    }
+    await this.sendAuth(conn, kind);
+  }
+
+  async sendAuth(conn, kind, webauthn) {
+    const c = conn.challenge;
+    c.sent = true;
+    const p = await proof(c.secret, "phone", c.nonce, c.fps.app, c.fps.phone);
+    if (conn !== this.conn) return;
+    this.send({ type: "auth", kind, proof: p, ...(webauthn ? { webauthn } : {}) });
+    this.log(`Pairing check: answered with ${kind === "pair" ? "the code" : webauthn ? "this phone's key and screen lock" : "this phone's key"}`);
+  }
+
+  /** Asks the phone for its screen lock, from a tap on Unlock, and answers the app's challenge
+   *  with it. Throws, leaving Unlock to tap again, if the person cancels or the phone can't. */
+  async unlock() {
+    const conn = this.conn;
+    const c = conn?.challenge;
+    if (!c?.uv || c.sent || this.status !== "locked") return;
+    if (!this.pairing.credentialId) {
+      // The app has this phone's screen lock but the page lost its credential: it can only fail.
+      this.log("Screen lock: this page has no credential for it");
+      await this.sendAuth(conn, "device");
+      return;
+    }
+    const webauthn = await checkScreenLock(this.pairing.credentialId, await uvChallenge(c.nonce, c.fps.app, c.fps.phone));
+    if (conn !== this.conn || c.sent) return;
+    this.setStatus("connecting");
+    await this.sendAuth(conn, "device", webauthn);
+  }
+
+  /** Whether this connection passed the screen lock check, so it may register a new credential. */
+  get passedScreenLock() {
+    return this.conn?.authed === true && this.conn.challenge?.uv === true;
+  }
+
+  /** Keeps the credential the app took, with the pairing, for the next reconnect. */
+  saveScreenLock(credentialId) {
+    if (!this.pairing?.deviceKey) return;
+    this.pairing = { ...this.pairing, credentialId };
+    store(() => localStorage.setItem(PAIRING_KEY, JSON.stringify(this.pairing)));
   }
 
   /** The app's proof back: right, and the page trusts what follows; wrong, and it stops. */
@@ -262,12 +312,12 @@ export class Connection {
         if (conn !== this.conn || !m || m.v !== 1) return;
         if (m.type === "goodbye" && m.reason === "refused") {
           this.log("Pairing check: refused by the app");
-          this.end("refused");
+          this.end(conn.challenge?.uv ? "lockRefused" : "refused");
           return;
         }
         if (!conn.authed) {
           if (m.type === "challenge" && typeof m.nonce === "string" && !conn.challenge) {
-            this.answerChallenge(conn, m.nonce).catch(() => this.end("unverified"));
+            this.answerChallenge(conn, m.nonce, m.requireUV === true).catch(() => this.end("unverified"));
           } else if (m.type === "authed" && typeof m.proof === "string") {
             this.checkApp(conn, m).catch(() => this.end("unverified"));
           }

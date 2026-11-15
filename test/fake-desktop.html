@@ -8,7 +8,72 @@
 <body>
 <script type="module">
   // Plays the desktop app's side of PROTOCOL.md for the tests, the pairing check included.
-  import { negotiatedFingerprints, proof, sameProof, toBase64Url } from "../auth.js";
+  import { fromBase64Url, negotiatedFingerprints, proof, sameProof, toBase64Url } from "../auth.js";
+
+  // The app's screen-lock checks, written out here rather than taken from the page, so a page
+  // that builds its answers wrong fails them.
+  const utf8 = s => new TextEncoder().encode(s);
+  const sha256 = async bytes => new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
+  const sameBytes = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
+  const uvChallenge = async (nonce, appFp, phoneFp) => toBase64Url(await sha256(utf8(["cmx-companion uv v1", nonce, appFp, phoneFp].join("\n"))));
+
+  /** WebAuthn's DER signature as the raw r‖s WebCrypto checks. */
+  function derToRaw(der) {
+    if (der[0] !== 0x30) return null;
+    const out = new Uint8Array(64);
+    let i = 2;
+    for (let k = 0; k < 2; k++) {
+      if (der[i] !== 0x02) return null;
+      const len = der[i + 1];
+      let v = der.slice(i + 2, i + 2 + len);
+      while (v.length > 32 && v[0] === 0) v = v.slice(1);
+      if (v.length > 32) return null;
+      out.set(v, k * 32 + 32 - v.length);
+      i += 2 + len;
+    }
+    return out;
+  }
+
+  /** The parts both checks share; a reason string when something is off. */
+  async function readSigned(m, type) {
+    const authData = fromBase64Url(m.authenticatorData);
+    const clientBytes = fromBase64Url(m.clientDataJSON);
+    if (!authData || authData.length < 37 || !clientBytes) return "malformed";
+    const client = JSON.parse(new TextDecoder().decode(clientBytes));
+    if (client.type !== type) return "wrong type";
+    if (client.origin !== location.origin || client.crossOrigin === true) return "wrong origin";
+    if (!sameBytes(authData.slice(0, 32), await sha256(utf8(location.hostname)))) return "wrong site";
+    if (!(authData[32] & 0x01)) return "no user present";
+    if (!(authData[32] & 0x04)) return "screen lock not checked";
+    return { authData, clientBytes, client, count: new DataView(authData.buffer).getUint32(33) };
+  }
+
+  async function checkEnrolment(m) {
+    if (m.alg !== -7) return "unsupported key type";
+    const r = await readSigned(m, "webauthn.create");
+    if (typeof r === "string") return r;
+    if (!(r.authData[32] & 0x40)) return "malformed";
+    try {
+      const key = await crypto.subtle.importKey("spki", fromBase64Url(m.publicKey), { name: "ECDSA", namedCurve: "P-256" }, false, ["verify"]);
+      return { credentialId: m.credentialId, key, count: r.count };
+    } catch {
+      return "unusable key";
+    }
+  }
+
+  async function checkAssertion(cred, a, challenge) {
+    if (!a) return "no credential";
+    if (a.credentialId !== cred.credentialId) return "unknown credential";
+    const r = await readSigned(a, "webauthn.get");
+    if (typeof r === "string") return r;
+    if (r.client.challenge !== challenge) return "wrong challenge";
+    if ((r.count !== 0 || cred.count !== 0) && r.count <= cred.count) return "replayed or cloned";
+    const raw = derToRaw(fromBase64Url(a.signature) ?? new Uint8Array());
+    const signed = new Uint8Array([...r.authData, ...(await sha256(r.clientBytes))]);
+    if (!raw || !await crypto.subtle.verify({ name: "ECDSA", hash: "SHA-256" }, cred.key, raw, signed)) return "bad signature";
+    cred.count = r.count;
+    return null;
+  }
 
   const params = new URLSearchParams(location.search);
   const id = params.get("id");
@@ -33,6 +98,12 @@
     noAuth: false,
     /** Prove the app with the wrong secret, as an impostor would. */
     badProof: false,
+    /** The app's screen lock setting: it takes an `enrol`, and once one is in, asks for the lock. */
+    requireUV: false,
+    /** The phone's credential, once its `enrol` passed. */
+    uvCred: null,
+    /** Each screen lock check's outcome: null for passed, else why not. */
+    uvChecks: [],
     connections: 0,
     sessions: example("sessions").sessions,
     /**
@@ -87,7 +158,13 @@
     const f = await negotiatedFingerprints(c.peerConnection);
     const fps = { app: f?.local ?? "", phone: f?.remote ?? "" };
     const key = m.kind === "pair" ? desk.code : desk.deviceKey;
-    const ok = !!key && sameProof(await proof(key, "phone", nonce, fps.app, fps.phone), m.proof);
+    let ok = !!key && sameProof(await proof(key, "phone", nonce, fps.app, fps.phone), m.proof);
+    if (ok && c.askedUV && m.kind === "device") {
+      const why = await checkAssertion(c.askedUV, m.webauthn, await uvChallenge(nonce, fps.app, fps.phone));
+      desk.uvChecks.push(why);
+      ok = why === null;
+      c.passedUV = ok;
+    }
     if (!ok) {
       c.send({ v: 1, type: "goodbye", reason: "refused" });
       c.close();
@@ -105,6 +182,16 @@
     c.send({ v: 1, type: "authed", proof: appProof, ...(issued ? { deviceKey: issued } : {}) });
   }
 
+  async function enrol(c, m) {
+    const answer = body => c.send({ v: 1, type: "enrolled", ...body });
+    if (!desk.requireUV) return answer({ ok: false, reason: "not asked" });
+    if (desk.uvCred && !c.passedUV) return answer({ ok: false, reason: "already set up" });
+    const r = await checkEnrolment(m);
+    if (typeof r === "string") return answer({ ok: false, reason: r });
+    desk.uvCred = r;
+    answer({ ok: true });
+  }
+
   peer.on("connection", c => {
     let nonce = null;
     c.on("open", () => {
@@ -116,7 +203,8 @@
         return;
       }
       nonce = newSecret();
-      c.send({ v: 1, type: "challenge", nonce });
+      c.askedUV = desk.requireUV ? desk.uvCred : null;
+      c.send({ v: 1, type: "challenge", nonce, ...(c.askedUV ? { requireUV: true } : {}) });
     });
     c.on("data", m => {
       desk.received.push(m);
@@ -132,6 +220,7 @@
         c.send({ v: 1, type: "goodbye", reason: "disconnected" });
         c.close();
       }
+      if (m.type === "enrol") enrol(c, m);
       if (m.type === "openImage") answerImage(m);
       if (m.type === "cancelImage") desk.cancelled.push(m.id);
       if (m.type === "openSession") {

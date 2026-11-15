@@ -8,6 +8,27 @@
     },
     {
       "v": 1,
+      "type": "auth",
+      "kind": "device",
+      "proof": "ZLEsvUMGRKVw2-DDYf6ROwg6a32cHQO_fEVMo0UXgUc",
+      "webauthn": {
+        "credentialId": "Y3JlZC0x",
+        "authenticatorData": "YXV0aC1kYXRh",
+        "clientDataJSON": "eyJ0eXBlIjoid2ViYXV0aG4uZ2V0In0",
+        "signature": "c2lnbmF0dXJl"
+      }
+    },
+    {
+      "v": 1,
+      "type": "enrol",
+      "credentialId": "Y3JlZC0x",
+      "publicKey": "cHVibGljLWtleQ",
+      "alg": -7,
+      "authenticatorData": "YXV0aC1kYXRh",
+      "clientDataJSON": "eyJ0eXBlIjoid2ViYXV0aG4uY3JlYXRlIn0"
+    },
+    {
+      "v": 1,
       "type": "hello",
       "clientId": "phone-7f3a",
       "features": [
@@ -112,6 +133,12 @@
     },
     {
       "v": 1,
+      "type": "challenge",
+      "nonce": "bm9uY2Utdg",
+      "requireUV": true
+    },
+    {
+      "v": 1,
       "type": "authed",
       "proof": "V_PUjTlPAJExww1PqbcLvonbQTK69ga0LH1brNWFPP0",
       "deviceKey": "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA"
@@ -131,6 +158,24 @@
       "features": [
         "images"
       ]
+    },
+    {
+      "v": 1,
+      "type": "features",
+      "features": [
+        "userVerification"
+      ]
+    },
+    {
+      "v": 1,
+      "type": "enrolled",
+      "ok": true
+    },
+    {
+      "v": 1,
+      "type": "enrolled",
+      "ok": false,
+      "reason": "screen lock not checked"
     },
     {
       "v": 1,
@@ -363,5 +408,11 @@
     "phoneFp": "sha-256 DD:EE:FF",
     "phoneProof": "ZLEsvUMGRKVw2-DDYf6ROwg6a32cHQO_fEVMo0UXgUc",
     "appProof": "V_PUjTlPAJExww1PqbcLvonbQTK69ga0LH1brNWFPP0"
+  },
+  "uvVector": {
+    "nonce": "bm9uY2Utdg",
+    "appFp": "sha-256 AA:BB:CC",
+    "phoneFp": "sha-256 DD:EE:FF",
+    "challenge": "8bduyn-QlgppPKi3CG-uter_FFLbMpk1uk9zn4fg7CQ"
   }
 }
