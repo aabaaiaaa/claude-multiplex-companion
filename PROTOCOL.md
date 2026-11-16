@@ -163,7 +163,7 @@ and ignores names it doesn't know:
 The screen lock comes before `welcome`, so it's said in `challenge` instead: `enrolUV` and
 `requireUV` (see *Screen lock*), first sent by 0.27.0, while the app's screen
 lock setting is on. `confirmPairing` (see *Confirming a new pairing*) is said there too, first
-sent by the next app release after 0.27.0.
+sent by 0.28.0.
 
 The other way, the page names what it shows in `hello`'s `features`, so a newer app sends a newer card only to a page that can show it. An app that doesn't know a name ignores it:
 
