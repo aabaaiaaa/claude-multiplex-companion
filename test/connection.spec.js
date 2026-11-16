@@ -1,7 +1,12 @@
 import { test, expect } from "@playwright/test";
-import { deskId, deskReceived, openDesk, openPhone, PEERJS_URL, phoneLink, routePeerjs, TEST_CODE, TEST_SERVER } from "./helpers.js";
+import { deskId, deskReceived, openDesk, openPhone, PEERJS_URL, phoneLink, routePeerjs, TEST_CODE, TEST_SERVER, watchCsp, cspViolations } from "./helpers.js";
 
-test.beforeEach(async ({ context }) => { await routePeerjs(context); });
+test.beforeEach(async ({ context }) => {
+  await routePeerjs(context);
+  await watchCsp(context);
+});
+// The page runs under its Content Security Policy throughout, with nothing it needs refused.
+test.afterEach(async ({ context }) => { expect(await cspViolations(context)).toEqual([]); });
 
 test("connects to the desktop and says hello", async ({ context }) => {
   const id = deskId();

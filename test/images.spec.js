@@ -1,8 +1,13 @@
 import { test, expect } from "@playwright/test";
 import { readFileSync } from "node:fs";
-import { deskId, deskReceived, openDesk, openPhone, phoneLink, routePeerjs } from "./helpers.js";
+import { deskId, deskReceived, openDesk, openPhone, phoneLink, routePeerjs, watchCsp, cspViolations } from "./helpers.js";
 
-test.beforeEach(async ({ context }) => { await routePeerjs(context); });
+test.beforeEach(async ({ context }) => {
+  await routePeerjs(context);
+  await watchCsp(context);
+});
+// The page runs under its Content Security Policy throughout, with nothing it needs refused.
+test.afterEach(async ({ context }) => { expect(await cspViolations(context)).toEqual([]); });
 
 const fixture = JSON.parse(readFileSync("test/fixtures/image_refs.json", "utf8"));
 

@@ -39,3 +39,23 @@ export async function openPhone(context, id, code) {
 }
 
 export const deskReceived = desk => desk.evaluate(() => window.desk.received);
+
+/** Records every Content Security Policy violation on the context's pages, for `cspViolations`. */
+export async function watchCsp(context) {
+  await context.addInitScript(() => {
+    window.cspViolations = [];
+    document.addEventListener("securitypolicyviolation", e => {
+      window.cspViolations.push(`${e.violatedDirective} ${e.blockedURI}`);
+    });
+  });
+}
+
+/** The CSP violations on the context's open pages so far. */
+export async function cspViolations(context) {
+  const all = [];
+  for (const page of context.pages()) {
+    if (page.isClosed()) continue;
+    all.push(...await page.evaluate(() => window.cspViolations ?? []).catch(() => []));
+  }
+  return all;
+}

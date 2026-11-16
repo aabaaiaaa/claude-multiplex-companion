@@ -74,7 +74,13 @@ kept by the phone, which may list it with its passkeys as "claude-multiplex phon
 can't remove it from there, but once the pairing ends nothing uses it.
 
 The PeerJS script from unpkg carries an `integrity` hash, so the browser won't run any other
-bytes in its place.
+bytes in its place. A Content Security Policy in `index.html` lets the page run only its own
+scripts and that one PeerJS file, with no inline script, plugins, forms or `<base>`. It has to
+be a `<meta>` tag, since GitHub Pages sends no headers of a site's own, so `frame-ancestors`
+(which only works as a header) isn't set. Its `connect-src` allows the page's own `blob:` URLs and any `https:` and `wss:`
+server, since the pairing server comes from the link, plus local `http:` and `ws:` ones for
+testing. The deploy workflow's Actions are pinned to commit SHAs, which Dependabot keeps up to
+date.
 
 ## Developing
 

@@ -1,7 +1,12 @@
 import { test, expect } from "@playwright/test";
-import { deskId, deskReceived, openDesk, phoneLink, routePeerjs } from "./helpers.js";
+import { deskId, deskReceived, openDesk, phoneLink, routePeerjs, watchCsp, cspViolations } from "./helpers.js";
 
-test.beforeEach(async ({ context }) => { await routePeerjs(context); });
+test.beforeEach(async ({ context }) => {
+  await routePeerjs(context);
+  await watchCsp(context);
+});
+// The page runs under its Content Security Policy throughout, with nothing it needs refused.
+test.afterEach(async ({ context }) => { expect(await cspViolations(context)).toEqual([]); });
 
 /** The phone's screen lock, as Chromium's virtual authenticator: a platform one that checks the
  *  user. `verified(false)` makes it fail that check, as a cancelled or wrong PIN does. */

@@ -1,7 +1,12 @@
 import { test, expect } from "@playwright/test";
-import { deskId, deskReceived, openDesk, openPhone, phoneLink, routePeerjs } from "./helpers.js";
+import { deskId, deskReceived, openDesk, openPhone, phoneLink, routePeerjs, watchCsp, cspViolations } from "./helpers.js";
 
-test.beforeEach(async ({ context }) => { await routePeerjs(context); });
+test.beforeEach(async ({ context }) => {
+  await routePeerjs(context);
+  await watchCsp(context);
+});
+// The page runs under its Content Security Policy throughout, with nothing it needs refused.
+test.afterEach(async ({ context }) => { expect(await cspViolations(context)).toEqual([]); });
 
 const STATUS = { idle: "idle", processing: "processing", waiting: "your turn", attention: "needs input", resumable: "stopped" };
 /** A session row as the app sends it: its status and whether it's your turn follow its state,
