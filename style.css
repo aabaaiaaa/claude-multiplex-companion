@@ -195,6 +195,8 @@ button:disabled, textarea:disabled, input:disabled { opacity: 0.5; }
   border: 1px solid var(--accent); border-radius: 10px;
   background: var(--pending);
   max-height: 55vh; overflow-y: auto;
+  /* Scrolling past its ends stops here, not in the chat behind it. */
+  overscroll-behavior: contain;
 }
 .card-title { margin: 0 0 8px; font-weight: 600; overflow-wrap: anywhere; }
 .card-body { margin: 0 0 10px; overflow-wrap: anywhere; }
@@ -209,6 +211,7 @@ button:disabled, textarea:disabled, input:disabled { opacity: 0.5; }
 .plan {
   margin: 0 0 10px; padding: 8px; border-radius: 6px; background: var(--panel);
   max-height: 30vh; overflow-y: auto; white-space: pre-wrap; overflow-wrap: anywhere;
+  overscroll-behavior: contain;
 }
 .plan-cut { font-size: 0.8125rem; color: var(--muted); }
 .choice-no { background: var(--panel); color: var(--danger); border: 1px solid var(--danger); }

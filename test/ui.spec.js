@@ -225,6 +225,66 @@ test("says when the plan is longer than it shows, and keeps the options in reach
   expect(plan.scroll).toBeGreaterThan(plan.client);
 });
 
+const longPlan = id => planCard(id, { plan: Array.from({ length: 200 }, (_, n) => `Step ${n}.`).join("\n") });
+
+test("keeps your place in a plan, and what you've typed, as the sessions update", async ({ context }) => {
+  const { desk, phone } = await paired(context, LIVE);
+  await openFirst(phone, desk);
+  await sendCard(desk, longPlan("plan-4"));
+  const card = phone.locator(".card");
+  const plan = card.locator(".plan");
+  await expect(plan).toContainText("Step 199.");
+  await plan.evaluate(e => { e.scrollTop = 500; });
+  await card.locator(".other-input").fill("Split step 3");
+  // The app may send the same card again, and any session's change sends the list again.
+  await sendCard(desk, longPlan("plan-4"));
+  await desk.evaluate(s => window.desk.send({ type: "sessions", sessions: s }),
+    [sessionRow("session-1", "parser-work", "attention"), sessionRow("session-2", "docs", "processing")]);
+  await expect(phone.locator(".session-list li", { hasText: "docs" }).locator(".badge-status")).toHaveText("processing");
+  expect(await plan.evaluate(e => e.scrollTop)).toBe(500);
+  await expect(card.locator(".other-input")).toHaveValue("Split step 3");
+  // A new card starts at its top.
+  await sendCard(desk, longPlan("plan-5"));
+  await expect(card.locator(".other-input")).toHaveValue("");
+  expect(await plan.evaluate(e => e.scrollTop)).toBe(0);
+});
+
+test("scrolling past either end of the card doesn't scroll the chat behind it", async ({ context }) => {
+  const { desk, phone } = await paired(context, LIVE);
+  await openFirst(phone, desk);
+  await liveWindow(desk, 30, 39);
+  await expect(phone.locator(".chat .you")).toHaveCount(10);
+  const card = phone.locator(".card");
+  /** Wheels over `target` past the end `dy` points at, and says how far the page moved. */
+  const pageMoves = async (target, dy) => {
+    await target.evaluate((e, down) => { e.scrollTop = down ? e.scrollHeight : 0; }, dy > 0);
+    // Midway down the chat, so it could move either way (and away from the top, which loads more).
+    const before = await phone.evaluate(() => {
+      window.scrollTo(0, (document.documentElement.scrollHeight - window.innerHeight) / 2);
+      return window.scrollY;
+    });
+    const box = await target.boundingBox();
+    await phone.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await phone.mouse.wheel(0, dy);
+    // Time for the wheel's scroll to land, so a still page means it didn't move.
+    await phone.waitForTimeout(300);
+    return (await phone.evaluate(() => window.scrollY)) - before;
+  };
+
+  await sendCard(desk, longPlan("plan-6"));
+  await expect(card.locator(".plan")).toContainText("Step 199.");
+  expect(await pageMoves(card.locator(".plan"), 400), "past the plan's end").toBe(0);
+  expect(await pageMoves(card.locator(".plan"), -400), "past the plan's start").toBe(0);
+
+  // A card taller than its room scrolls as a whole.
+  await sendCard(desk, { id: "card-long", kind: "permission", toolName: "Bash", summary: "npm test\n".repeat(80),
+    options: [{ label: "Yes" }, { label: "No" }] });
+  await expect(card.locator(".summary")).toContainText("npm test");
+  expect(await card.evaluate(e => e.scrollHeight > e.clientHeight), "the card overflows").toBe(true);
+  expect(await pageMoves(card, 400), "past the card's end").toBe(0);
+  expect(await pageMoves(card, -400), "past the card's start").toBe(0);
+});
+
 test("says to answer in the app a card it doesn't know, from a newer app", async ({ context }) => {
   const { desk, phone } = await paired(context, LIVE);
   await openFirst(phone, desk);

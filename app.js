@@ -597,8 +597,15 @@ function choiceQuestions(card) {
 
 function renderCard(card) {
   const box = $(".card");
-  box.replaceChildren();
   box.hidden = !card;
+  // Already showing this card: rebuilding it would lose your place in it and anything typed.
+  const key = card ? JSON.stringify([state.openId, card]) : "";
+  if (box.dataset.key === key) {
+    if (card && state.answered.has(card.id)) for (const b of box.querySelectorAll("button, input")) b.disabled = true;
+    return;
+  }
+  box.dataset.key = key;
+  box.replaceChildren();
   if (!card) return;
   if (card.kind === "permission") box.append(permissionCard(card));
   else if (card.kind === "confirm") box.append(confirmCard(card));
