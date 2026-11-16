@@ -152,6 +152,7 @@ main { padding: 12px 16px 24px; }
 }
 .table-wrap th { background: var(--panel); font-weight: 600; }
 .left-title { font-size: 1.25rem; font-weight: 600; }
+.confirm-code { font-size: 2.4rem; font-weight: 600; letter-spacing: 0.08em; font-variant-numeric: tabular-nums; text-align: center; margin: 0.5em 0; }
 .left-closing { color: var(--muted); }
 
 .bottom {

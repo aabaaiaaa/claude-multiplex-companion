@@ -130,10 +130,13 @@ export function peerOptions(server, stun) {
 /**
  * Statuses: "unpaired", "connecting", "connected", "reconnecting", "ended", "locked" (the app
  * asks for the phone's screen lock before it reconnects; `unlock()` answers) and "enrolling" (the
- * app needs the screen lock set up before it lets this page in; `enrolScreenLock()` answers).
+ * app needs the screen lock set up before it lets this page in; `enrolScreenLock()` answers) and
+ * "confirming" (the app waits for the person at the computer to confirm this phone, by the code
+ * in `confirmCode`, which both show).
  * `onEnded(reason)` gets "left" (disconnected from this page), "outdated" (the app is too old for
  * this page), "refused" (the app turned down the pairing check, as for an expired code),
  * "lockRefused" (it turned down a connection that had to pass or set up the screen lock),
+ * "notConfirmed" (the person at the computer said this isn't their phone, or didn't answer),
  * "unverified" (whatever answered couldn't prove it's the app paired with), "disconnected",
  * "replaced" or "unavailable".
  * `onTrouble()` runs when a direct connection didn't open in time.
@@ -173,7 +176,7 @@ export class Connection {
   /** Answers the app's challenge with the code or the device key, bound to this connection. When
    *  the app asks for the screen lock on a reconnect, it waits for `unlock()` instead. `enrolUV`:
    *  once the app has proved itself, the page sets the screen lock up before anything else. */
-  async answerChallenge(conn, nonce, requireUV, enrolUV) {
+  async answerChallenge(conn, nonce, requireUV, enrolUV, confirm) {
     // Marked at once, so a second challenge on this connection is ignored.
     conn.challenge = { nonce };
     const kind = this.pairing.code ? "pair" : "device";
@@ -186,7 +189,7 @@ export class Connection {
       return;
     }
     const uv = requireUV && kind === "device";
-    conn.challenge = { nonce, secret, fps, uv, enrol: enrolUV && !uv };
+    conn.challenge = { nonce, secret, fps, uv, enrol: enrolUV && !uv, confirm };
     if (uv) {
       // The phone's prompt needs a tap on Safari, so the page asks for one rather than prompting.
       this.log("Screen lock: the app asks for it before this phone reconnects");
@@ -293,7 +296,20 @@ export class Connection {
     this.letIn(conn);
   }
 
+  /** The code the app and the computer show while this phone waits to be confirmed. */
+  get confirmCode() {
+    return this.conn?.confirming ? this.conn.confirmCode ?? null : null;
+  }
+
   letIn(conn) {
+    // A new pairing waits for the person at the computer to confirm it's this phone.
+    if (conn.challenge?.confirm && !conn.confirmed) {
+      conn.confirming = true;
+      this.log("Pairing: waiting for the computer to confirm this phone");
+      this.setStatus("confirming");
+      return;
+    }
+    conn.confirming = false;
     conn.authed = true;
     this.setStatus("connected");
     this.send({ type: "hello", clientId: clientId(), features: PAGE_FEATURES });
@@ -352,8 +368,26 @@ export class Connection {
       conn.on("data", m => {
         if (conn !== this.conn || !m || m.v !== 1) return;
         if (m.type === "goodbye" && m.reason === "refused") {
-          this.log("Pairing check: refused by the app");
-          this.end(conn.challenge?.uv || conn.challenge?.enrol ? "lockRefused" : "refused");
+          this.log(conn.confirming ? "Pairing: not confirmed at the computer" : "Pairing check: refused by the app");
+          this.end(conn.confirming ? "notConfirmed" : conn.challenge?.uv || conn.challenge?.enrol ? "lockRefused" : "refused");
+          return;
+        }
+        // Kept whenever it comes, as it can arrive while the app's proof is still being checked.
+        if (m.type === "confirmCode" && typeof m.code === "string" && /^\d{6}$/.test(m.code)) {
+          conn.confirmCode = m.code;
+          if (conn.confirming) this.setStatus("confirming");
+          return;
+        }
+        if (m.type === "pairingConfirmed") {
+          conn.confirmed = true;
+          if (conn.confirming) {
+            this.log("Pairing: confirmed at the computer");
+            this.letIn(conn);
+          }
+          return;
+        }
+        if (conn.confirming) {
+          if (m.type === "goodbye") this.end(this.leaving || "disconnected");
           return;
         }
         if (conn.enrolling) {
@@ -362,7 +396,7 @@ export class Connection {
         }
         if (!conn.authed) {
           if (m.type === "challenge" && typeof m.nonce === "string" && !conn.challenge) {
-            this.answerChallenge(conn, m.nonce, m.requireUV === true, m.enrolUV === true).catch(() => this.end("unverified"));
+            this.answerChallenge(conn, m.nonce, m.requireUV === true, m.enrolUV === true, m.confirmPairing === true).catch(() => this.end("unverified"));
           } else if (m.type === "authed" && typeof m.proof === "string") {
             this.checkApp(conn, m).catch(() => this.end("unverified"));
           }

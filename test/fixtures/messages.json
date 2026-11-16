@@ -145,6 +145,12 @@
     },
     {
       "v": 1,
+      "type": "challenge",
+      "nonce": "bm9uY2Utdg",
+      "confirmPairing": true
+    },
+    {
+      "v": 1,
       "type": "authed",
       "proof": "V_PUjTlPAJExww1PqbcLvonbQTK69ga0LH1brNWFPP0",
       "deviceKey": "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA"
@@ -175,6 +181,15 @@
       "type": "enrolled",
       "ok": false,
       "reason": "screen lock not checked"
+    },
+    {
+      "v": 1,
+      "type": "confirmCode",
+      "code": "482913"
+    },
+    {
+      "v": 1,
+      "type": "pairingConfirmed"
     },
     {
       "v": 1,

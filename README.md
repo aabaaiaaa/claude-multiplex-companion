@@ -37,6 +37,11 @@ the PeerJS server that introduces them can't pose as either.
 - **The pairing check:** the page proves it has the code, or later the key the app gave it, and
   the app proves itself back, both bound to the connection (see [PROTOCOL.md](PROTOCOL.md)). A
   code that's expired or been used gets a request to scan a new one.
+- **Confirming the phone:** before a new pairing shows anything, the page and the computer show
+  the same six-digit code, and the person at the computer presses This is my phone. So whoever
+  scanned the QR code first can't pair unseen: someone else's phone shows a code yours doesn't,
+  and only the computer can say yes. Turned down, or not answered within 2 minutes, the pairing
+  ends and needs a new scan.
 - **The page** connects to that id over a WebRTC data channel, through the pairing server the link
   names, which must be https://. The link's STUN servers get it through home routers and mobile
   data. There's no relay that passes the traffic on, so a phone on the same Wi-Fi as the computer

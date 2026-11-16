@@ -59,6 +59,25 @@ read the lock, so it uses a WebAuthn credential that needs user verification, on
 A setup or Unlock left untouched gets the same 60 s. An app from before the setting never sends
 `enrolUV` or `requireUV`, and the page answers as before.
 
+## Confirming a new pairing
+
+The pairing check only proves the phone has the QR code, which anyone who saw it in its minute
+could. So until the person at the computer confirms the phone, the app's `challenge` carries
+`confirmPairing: true`.
+
+1. **The page answers as usual,** checks `authed`, and sets the screen lock up first if it's
+   asked to (*Screen lock*).
+2. **The app sends `confirmCode`** with six digits, which the computer shows too. The page shows
+   them on its Confirm on your computer screen, and sends nothing, not even `hello`. The code
+   can arrive while the page is still checking `authed`, so the page keeps it whenever it comes.
+3. **This is my phone at the computer:** the app sends `pairingConfirmed`, and the page is let in
+   and sends `hello`.
+4. **Not my phone, or no answer within 2 minutes:** the app sends `goodbye` `refused`, and the
+   page ends the pairing, forgets its key, and asks for a new scan (`notConfirmed`).
+
+Once confirmed, reconnects are never asked again. An app from before this never sends
+`confirmPairing`, and the page goes straight in as before.
+
 ## Page → app
 
 | type | fields |
@@ -81,7 +100,9 @@ A setup or Unlock left untouched gets the same 60 s. An app from before the sett
 
 | type | fields |
 |---|---|
-| `challenge` | `nonce`: see *The pairing check*; `requireUV: true` when the app wants the screen lock with a `"device"` answer, or `enrolUV: true` when it wants it set up after `authed`, before anything else: see *Screen lock* |
+| `challenge` | `nonce`: see *The pairing check*; `requireUV: true` when the app wants the screen lock with a `"device"` answer, or `enrolUV: true` when it wants it set up after `authed`, before anything else: see *Screen lock*; `confirmPairing: true` while the person at the computer hasn't confirmed this phone yet: see *Confirming a new pairing* |
+| `confirmCode` | `code`: six digits the computer shows too, while the person there confirms this phone |
+| `pairingConfirmed` | none: the person at the computer confirmed this phone; the page is let in and sends `hello` |
 | `enrolled` | `ok`, and `reason` when not: the app's answer to `enrol`; on `ok` the page is let in and sends `hello` |
 | `authed` | `proof`, and `deviceKey` after a `"pair"`: see *The pairing check* |
 | `welcome` | `deviceId`, `appVersion`: the app's version, such as `"0.25.0"`, or empty if the app couldn't read it, `features`: what the app lets this phone do, see *Images* |
@@ -141,7 +162,8 @@ and ignores names it doesn't know:
 
 The screen lock comes before `welcome`, so it's said in `challenge` instead: `enrolUV` and
 `requireUV` (see *Screen lock*), first sent by 0.27.0, while the app's screen
-lock setting is on.
+lock setting is on. `confirmPairing` (see *Confirming a new pairing*) is said there too, first
+sent by the next app release after 0.27.0.
 
 The other way, the page names what it shows in `hello`'s `features`, so a newer app sends a newer card only to a page that can show it. An app that doesn't know a name ignores it:
 

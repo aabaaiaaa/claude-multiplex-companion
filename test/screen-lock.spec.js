@@ -89,6 +89,24 @@ test("sets the screen lock up as it pairs, before the app shows anything, then n
   await expect(phone.locator(".diagnostics-log")).toContainText("answered with this phone's key and screen lock");
 });
 
+test("sets the screen lock up first, then waits for the computer to confirm the phone", async ({ context }) => {
+  const id = deskId();
+  const desk = await openDesk(context, id);
+  await desk.evaluate(() => { window.desk.requireUV = true; window.desk.confirmPairing = true; });
+  const phone = await context.newPage();
+  await screenLock(phone);
+  await phone.goto(phoneLink(id));
+  await expect(phone.locator(".screen-enrol")).toBeVisible();
+  await phone.locator(".enrol-button").click();
+  await expect(phone.locator(".screen-confirm")).toBeVisible();
+  await expect(phone.locator(".confirm-code")).toHaveText("482 913");
+  expect(await sentTypes(desk), "no hello before it's confirmed").toEqual(["auth", "enrol"]);
+  await desk.evaluate(() => window.desk.confirm(true));
+  await expect(phone.locator(".status")).toHaveText("Connected");
+  await expect.poll(() => sentTypes(desk)).toEqual(["auth", "enrol", "hello"]);
+  expect((await savedPairing(phone)).credentialId, "the screen lock is kept").toMatch(/^[\w-]+$/);
+});
+
 test("asks for the lock again after the page is reopened, and keeps the session that was open", async ({ context }) => {
   const { desk, phone } = await pairWithLock(context);
   await setUp(desk, phone);

@@ -21,6 +21,48 @@ test("connects to the desktop and says hello", async ({ context }) => {
   expect(hello.features).toEqual(["planCards"]);
 });
 
+test("waits for the computer to confirm a new pairing, showing its code, then says hello", async ({ context }) => {
+  const id = deskId();
+  const desk = await openDesk(context, id);
+  await desk.evaluate(() => { window.desk.confirmPairing = true; });
+  const phone = await openPhone(context, id);
+  await expect(phone.locator(".status")).toHaveText("Confirm on computer");
+  await expect(phone.locator(".screen-confirm")).toBeVisible();
+  await expect(phone.locator(".confirm-code")).toHaveText("482 913");
+  expect((await deskReceived(desk)).map(m => m.type), "no hello before it's confirmed").not.toContain("hello");
+  await desk.evaluate(() => window.desk.confirm(true));
+  await expect(phone.locator(".status")).toHaveText("Connected");
+  await expect.poll(async () => (await deskReceived(desk)).map(m => m.type)).toContain("hello");
+  await expect(phone.locator(".session-list li")).not.toHaveCount(0);
+});
+
+test("ends the pairing, forgetting it, when the computer says this isn't its phone", async ({ context }) => {
+  const id = deskId();
+  const desk = await openDesk(context, id);
+  await desk.evaluate(() => { window.desk.confirmPairing = true; });
+  const phone = await openPhone(context, id);
+  await expect(phone.locator(".screen-confirm")).toBeVisible();
+  await desk.evaluate(() => window.desk.confirm(false));
+  await expect(phone.locator(".screen-ended")).toBeVisible();
+  await expect(phone.locator(".ended-text")).toContainText("The computer didn't confirm this phone");
+  expect(await phone.evaluate(() => localStorage.getItem("cmx-companion-pairing"))).toBeNull();
+});
+
+test("a reconnect after the pairing was confirmed isn't asked again", async ({ context }) => {
+  const id = deskId();
+  const desk = await openDesk(context, id);
+  await desk.evaluate(() => { window.desk.confirmPairing = true; });
+  const phone = await openPhone(context, id);
+  await expect(phone.locator(".screen-confirm")).toBeVisible();
+  await desk.evaluate(() => window.desk.confirm(true));
+  await expect(phone.locator(".status")).toHaveText("Connected");
+  await desk.evaluate(() => window.desk.closeConnection());
+  await expect.poll(() => desk.evaluate(() => window.desk.connections), { timeout: 30_000 }).toBe(2);
+  await expect(phone.locator(".status")).toHaveText("Connected");
+  const challenges = (await deskReceived(desk)).filter(m => m.type === "hello");
+  expect(challenges, "it said hello on each connection").toHaveLength(2);
+});
+
 /** Keeps each page's RTCPeerConnections, so a test can put one in the state a lost network leaves. */
 async function recordPeerConnections(context) {
   await context.addInitScript(() => {

@@ -100,6 +100,27 @@
     badProof: false,
     /** The app's screen lock setting: a phone sets the lock up before it's let in, then needs it. */
     requireUV: false,
+    /** The app's confirmation of a new pairing: it waits for `confirm(ok)`, as the person at the PC. */
+    confirmPairing: false,
+    /** Whether this pairing's phone was confirmed. */
+    confirmed: false,
+    /** The code both ends show while it waits. */
+    confirmCode: "482913",
+    /** Answers for the person at the PC: in, or turned away. */
+    confirm(ok) {
+      const c = waiting;
+      waiting = null;
+      if (!c) return;
+      c.confirming = false;
+      if (!ok) {
+        c.send({ v: 1, type: "goodbye", reason: "refused" });
+        c.close();
+        return;
+      }
+      desk.confirmed = true;
+      c.send({ v: 1, type: "pairingConfirmed" });
+      letIn(c);
+    },
     /** The phone's credential, once its `enrol` passed. */
     uvCred: null,
     /** Each screen lock check's outcome: null for passed, else why not. */
@@ -151,6 +172,9 @@
     if (now.length < rest.length) desk.held[m.id] = rest.slice(now.length);
   }
 
+  /** The connection waiting to be confirmed. */
+  let waiting = null;
+
   const newSecret = () => toBase64Url(crypto.getRandomValues(new Uint8Array(32)));
 
   async function check(c, m, nonce) {
@@ -183,6 +207,13 @@
   }
 
   function letIn(c) {
+    if (desk.confirmPairing && !desk.confirmed) {
+      // As the app does: nothing reaches a new pairing's phone until the PC confirms it.
+      c.confirming = true;
+      waiting = c;
+      c.send({ v: 1, type: "confirmCode", code: desk.confirmCode });
+      return;
+    }
     c.authed = true;
     conn = c;
     desk.connections += 1;
@@ -213,10 +244,15 @@
       nonce = newSecret();
       c.askedUV = desk.requireUV ? desk.uvCred : null;
       c.askedEnrol = desk.requireUV && !desk.uvCred;
-      c.send({ v: 1, type: "challenge", nonce, ...(c.askedUV ? { requireUV: true } : c.askedEnrol ? { enrolUV: true } : {}) });
+      c.send({
+        v: 1, type: "challenge", nonce,
+        ...(c.askedUV ? { requireUV: true } : c.askedEnrol ? { enrolUV: true } : {}),
+        ...(desk.confirmPairing && !desk.confirmed ? { confirmPairing: true } : {}),
+      });
     });
     c.on("data", m => {
       desk.received.push(m);
+      if (c.confirming) return;
       if (c.enrolling) {
         if (m.type === "enrol") enrol(c, m);
         else {

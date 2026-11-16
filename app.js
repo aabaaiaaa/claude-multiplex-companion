@@ -17,11 +17,13 @@ const STATUS_TEXT = {
   unpaired: "Not paired",
   locked: "Locked",
   enrolling: "Locked",
+  confirming: "Confirm on computer",
 };
 
 const ENDED_TEXT = {
   replaced: "This page was replaced: this phone connected to the app again, from another tab or browser. To use this one instead, scan a new code in claude-multiplex.",
   refused: "The app turned this code down: it may have expired, or been used already. Each code works once, for under a minute. Scan a new one in claude-multiplex.",
+  notConfirmed: "The computer didn't confirm this phone, so the pairing ended. To pair, scan a new code in claude-multiplex, check its code matches the one here, and press This is my phone there.",
   lockRefused: "The app didn't let this phone in: its screen lock couldn't be checked. To connect again, end the pairing in claude-multiplex, then scan a new code.",
   unverified: "Whatever answered couldn't prove it's the app this phone paired with, so this page stopped. Scan a new code in claude-multiplex.",
   disconnected: "Pairing ended in the app. To connect again, scan the code in claude-multiplex.",
@@ -1154,6 +1156,11 @@ const connection = new Connection({
     if (status === "unpaired") showScreen("unpaired");
     if (status === "locked") showScreen("locked");
     if (status === "enrolling") showScreen("enrol");
+    if (status === "confirming") {
+      const code = connection.confirmCode;
+      $(".confirm-code").textContent = code ? `${code.slice(0, 3)} ${code.slice(3)}` : "…";
+      showScreen("confirm");
+    }
     if (status === "connected" || status === "ended") $(".trouble").hidden = true;
     if (status === "reconnecting" || status === "connecting") showWaiting();
     if (status === "connected") {
