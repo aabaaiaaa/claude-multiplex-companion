@@ -810,11 +810,35 @@ $(".resume").addEventListener("click", () => {
 // ---- Keep screen on ----------------------------------------------------------
 
 const WAKE_KEY = "cmx-companion-keep-awake";
+/** With no touch, scroll or key for this long, the screen is let go, so an unlocked phone left
+ *  alone locks itself as usual; the next touch holds it on again. */
+const WAKE_IDLE_MS = 20 * 60_000;
 let wakeLock = null;
+let wakeIdle = null;
+/** The idle time ran out, so the screen is let go until the next touch. */
+let wakeIdled = false;
 
-/** Holds the screen on while the page shows; the browser lets go whenever it's hidden. */
+function restartWakeIdle() {
+  clearTimeout(wakeIdle);
+  wakeIdle = setTimeout(() => {
+    wakeIdled = true;
+    applyWakeLock();
+  }, WAKE_IDLE_MS);
+}
+
+function onActivity() {
+  if (!state.keepAwake) return;
+  restartWakeIdle();
+  if (wakeIdled) {
+    wakeIdled = false;
+    applyWakeLock();
+  }
+}
+
+/** Holds the screen on while the page shows and is in use; the browser lets go whenever it's
+ *  hidden, and the page does after `WAKE_IDLE_MS` with nothing done. */
 async function applyWakeLock() {
-  if (!state.keepAwake) {
+  if (!state.keepAwake || wakeIdled) {
     const lock = wakeLock;
     wakeLock = null;
     await lock?.release().catch(() => {});
@@ -832,6 +856,9 @@ async function applyWakeLock() {
 
 function setKeepAwake(on) {
   state.keepAwake = on;
+  wakeIdled = false;
+  if (on) restartWakeIdle();
+  else clearTimeout(wakeIdle);
   try { localStorage.setItem(WAKE_KEY, on ? "1" : "0"); } catch { /* private mode */ }
   $(".menu-wake").setAttribute("aria-checked", String(on));
   applyWakeLock();
@@ -842,7 +869,14 @@ $(".menu-wake").addEventListener("click", () => {
   setMenu(false);
   setKeepAwake(!state.keepAwake);
 });
-document.addEventListener("visibilitychange", () => { applyWakeLock(); });
+document.addEventListener("visibilitychange", () => {
+  // Opened again: someone is looking at it.
+  if (document.visibilityState === "visible") onActivity();
+  applyWakeLock();
+});
+for (const type of ["pointerdown", "keydown", "touchstart"]) document.addEventListener(type, onActivity, { passive: true, capture: true });
+// The chat's scroll doesn't bubble, so it's caught on the way down.
+document.addEventListener("scroll", onActivity, { passive: true, capture: true });
 
 // ---- Buzz when a session needs you -------------------------------------------------
 

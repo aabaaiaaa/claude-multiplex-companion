@@ -556,6 +556,37 @@ test("keeps the screen on from the menu, and remembers it", async ({ context }) 
   await expect.poll(() => phone.evaluate(() => window.wakeCalls)).toEqual(["screen", "release"]);
 });
 
+test("lets the screen go after 20 minutes with nothing done, and holds it again on a touch", async ({ context }) => {
+  await context.addInitScript(() => {
+    window.wakeCalls = [];
+    Object.defineProperty(navigator, "wakeLock", { configurable: true, value: {
+      request: async type => {
+        window.wakeCalls.push(type);
+        const lock = new EventTarget();
+        lock.release = async () => { window.wakeCalls.push("release"); lock.dispatchEvent(new Event("release")); };
+        return lock;
+      },
+    } });
+  });
+  const { phone } = await paired(context);
+  await phone.clock.install();
+  await phone.locator(".menu-button").click();
+  await phone.locator(".menu-wake").click();
+  const calls = () => phone.evaluate(() => window.wakeCalls);
+  await expect.poll(calls).toEqual(["screen"]);
+  await phone.clock.fastForward("19:00");
+  // A touch starts the 20 minutes again.
+  await phone.locator(".title").tap();
+  await phone.clock.fastForward("19:00");
+  expect(await calls()).toEqual(["screen"]);
+  await phone.clock.fastForward("01:30");
+  await expect.poll(calls).toEqual(["screen", "release"]);
+  // Still on in the menu: only let go until the page is used again.
+  await phone.locator(".menu-button").click();
+  await expect(phone.locator(".menu-wake")).toHaveAttribute("aria-checked", "true");
+  await expect.poll(calls).toEqual(["screen", "release", "screen"]);
+});
+
 test("buzzes when a session starts needing you, and can be switched off from the menu", async ({ context }) => {
   await context.addInitScript(() => {
     window.buzzes = [];

@@ -14,7 +14,8 @@ straight to the app. From the page you can:
 The top bar shows today's spend as a share of today's budget. Arrows above the prompt box jump
 to the start of Claude's last response and to the end of the chat.
 
-The menu (☰) goes back to the sessions, keeps the screen on while the page is open, switches
+The menu (☰) goes back to the sessions, keeps the screen on while the page is open and in use (it lets go after
+20 minutes with no touch, scroll or key, so a phone left alone locks itself as usual), switches
 off the buzz, sets the text size, shows the connection details, disconnects, and offers a newer version of this page
 once one is deployed. Claude's `code`, code blocks, tables and
 **bold** show formatted. The prompt box grows as you type. Once nothing has happened for 10
