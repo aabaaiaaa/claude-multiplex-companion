@@ -87,7 +87,7 @@ A setup or Unlock left untouched gets the same 60 s. An app from before the sett
 | `welcome` | `deviceId`, `appVersion`: the app's version, such as `"0.25.0"`, or empty if the app couldn't read it, `features`: what the app lets this phone do, see *Images* |
 | `features` | `features`: the same list as in `welcome`, sent again whenever it changes |
 | `sessions` | `sessions: [{id, name, state, live, canType, pending, canResume, status, detail, awaiting, group, groupKey}]`, in the app's sidebar order. `status` is what the app's sidebar says (`"your turn"`, `"waiting on 2 agents"`), `detail` what's still running (`"Still running: 1 agent"`, or empty), `awaiting` whether it's your turn, `group` the sidebar group the row is in, to show (`"Awaiting input"`, or a folder name when the sidebar groups by folder), and `groupKey` that group's stable id, to group by (`"awaiting"`, `"processing"`, `"idle"`, `"resumable"`, or the folder name) |
-| `conversation` | `sessionId`, `mtimeMs`, `lastResponseAtMs` (optional: sent by the release after 0.26.1 on): when Claude last replied, in milliseconds since the epoch by the app's clock, from the transcript's timestamps. The page shows "Last response from Claude" by it, never later than its own now, rather than by when the message arrived, which can be late if the page was asleep. Without it the page dates a reply by when it arrives. `entries: [{kind:"turn", index, prompt?, items: [{kind:"text",text} \| {kind:"tools",labels}]}]`, `hasEarlier`. The entries are a window that rolls forward: the last hour's turns, at least the latest 5 and at most 30. `index` is the transcript's turn number. `hasEarlier` says there are turns before the window |
+| `conversation` | `sessionId`, `mtimeMs`, `lastResponseAtMs` (optional: sent by 0.27.0 on): when Claude last replied, in milliseconds since the epoch by the app's clock, from the transcript's timestamps. The page shows "Last response from Claude" by it, never later than its own now, rather than by when the message arrived, which can be late if the page was asleep. Without it the page dates a reply by when it arrives. `entries: [{kind:"turn", index, prompt?, items: [{kind:"text",text} \| {kind:"tools",labels}]}]`, `hasEarlier`. The entries are a window that rolls forward: the last hour's turns, at least the latest 5 and at most 30. `index` is the transcript's turn number. `hasEarlier` says there are turns before the window |
 | `earlier` | `sessionId`, `before`, `entries`: up to 10 turns before turn `before`, `hasEarlier`: there are more before those |
 | `prompt` | `sessionId`, `card`: a permission card `{id, kind:"permission", toolName, summary, options:[{label}]}`, a question card `{id, kind:"question", questions:[{header, question, multiSelect, options:[{label, description?}]}]}`, the app's own question `{id, kind:"confirm", title, body, options:[{label}]}` (such as the over-budget reminder before it starts a session; the first option goes ahead), a plan card `{id, kind:"plan", plan, cut, options:[{label, input?}]}` (Claude's plan with the options of the plan menu as the app read them off its screen; `input`: the option is a text box, answered with `{kind:"text", text}`; `cut`: the plan is longer than `plan`; only to a page that says `planCards`), or `null` once it's answered. A card of a kind the page doesn't know says to answer in the app |
 | `error` | `message` |
@@ -137,17 +137,17 @@ and ignores names it doesn't know:
 | Feature | The page | First sent by |
 |---|---|---|
 | `images` | makes image references tappable and opens them | 0.26.0, while the app's image sharing setting is on |
-| `plainPaths` | counts plain full paths as image references too; only with `images` | the release after 0.26.1, alongside `images` |
+| `plainPaths` | counts plain full paths as image references too; only with `images` | 0.27.0, alongside `images` |
 
 The screen lock comes before `welcome`, so it's said in `challenge` instead: `enrolUV` and
-`requireUV` (see *Screen lock*), first sent by the release after 0.26.1, while the app's screen
+`requireUV` (see *Screen lock*), first sent by 0.27.0, while the app's screen
 lock setting is on.
 
 The other way, the page names what it shows in `hello`'s `features`, so a newer app sends a newer card only to a page that can show it. An app that doesn't know a name ignores it:
 
 | Feature | The app | First read by |
 |---|---|---|
-| `planCards` | sends a `plan` card for Claude's plan prompt | the app release that adds plan cards, after 0.26.1 |
+| `planCards` | sends a `plan` card for Claude's plan prompt | 0.27.0 |
 
 A page change that needs new app behaviour adds a name here, with the app change that sends it,
 and goes live whenever it's ready: apps that don't send the name carry on as before.
