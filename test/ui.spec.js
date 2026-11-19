@@ -535,6 +535,51 @@ test("says the session wasn't started when the over-budget question is cancelled
   await expect(phone.locator(".resume")).toBeEnabled();
 });
 
+/** Pairs with an app whose welcome carries `features`, and opens parser-work. */
+async function openWithFeatures(context, sessions, features) {
+  const id = deskId();
+  const desk = await openDesk(context, id);
+  await desk.evaluate(([s, f]) => { window.desk.sessions = s; window.desk.features = f; }, [sessions, features]);
+  const phone = await openPhone(context, id);
+  await expect(phone.locator(".status")).toHaveText("Connected");
+  await phone.locator(".session-list li", { hasText: "parser-work" }).click();
+  await expect(phone.locator(".screen-chat")).toBeVisible();
+  return { desk, phone };
+}
+
+const CERT_FAILED = [sessionRow("session-1", "parser-work", "waiting", { certError: true }), LIVE[1]];
+
+test("offers a restart after a certificate error, and drops it once the session restarted", async ({ context }) => {
+  const { desk, phone } = await openWithFeatures(context, CERT_FAILED, ["certRestart"]);
+  const notice = phone.locator(".cert-restart");
+  await expect(notice).toBeVisible();
+  await expect(notice).toContainText("This looks like a certificate error.");
+  const restart = phone.locator(".restart");
+  await restart.click();
+  await expect.poll(() => lastOfType(desk, "restartSession")).toMatchObject({ sessionId: "session-1" });
+  await expect(restart).toHaveText("Restarting…");
+  await expect(restart).toBeDisabled();
+  await desk.evaluate(rows => window.desk.send({ type: "sessions", sessions: rows }),
+    [sessionRow("session-1", "parser-work", "idle", { certError: false }), LIVE[1]]);
+  await expect(notice).toBeHidden();
+});
+
+test("lets you try the restart again when the app refuses it", async ({ context }) => {
+  const { desk, phone } = await openWithFeatures(context, CERT_FAILED, ["certRestart"]);
+  await phone.locator(".restart").click();
+  await expect.poll(() => lastOfType(desk, "restartSession")).toBeDefined();
+  await desk.evaluate(() => window.desk.send({ type: "error", message: "Couldn't restart that session" }));
+  await expect(phone.locator(".toast")).toHaveText("Couldn't restart that session");
+  await expect(phone.locator(".restart")).toHaveText("Restart session");
+  await expect(phone.locator(".restart")).toBeEnabled();
+});
+
+test("offers no restart to an app that doesn't take it", async ({ context }) => {
+  const { phone } = await openWithFeatures(context, CERT_FAILED, []);
+  await expect(phone.locator(".prompt-input")).toBeEnabled();
+  await expect(phone.locator(".cert-restart")).toBeHidden();
+});
+
 test("keeps the screen on from the menu, and remembers it", async ({ context }) => {
   await context.addInitScript(() => {
     window.wakeCalls = [];

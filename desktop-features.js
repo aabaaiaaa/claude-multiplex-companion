@@ -7,6 +7,9 @@ export const FEATURES = Object.freeze({
   images: "images",
   /** A full path written without backticks also counts as an image reference. Only with images. */
   plainPaths: "plainPaths",
+  /** A running session whose last turn failed with a certificate error has `certError` on its
+   *  row, and `restartSession` starts its claude again. */
+  certRestart: "certRestart",
 });
 
 /** For each name in FEATURES, whether the app's `features` list holds it. Anything else in the
@@ -15,5 +18,5 @@ export function appFeatures(features) {
   const list = Array.isArray(features) ? features : [];
   const has = name => list.includes(name);
   const images = has(FEATURES.images);
-  return { images, plainPaths: images && has(FEATURES.plainPaths) };
+  return { images, plainPaths: images && has(FEATURES.plainPaths), certRestart: has(FEATURES.certRestart) };
 }

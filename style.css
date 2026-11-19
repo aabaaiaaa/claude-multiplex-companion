@@ -184,7 +184,10 @@ main { padding: 12px 16px 24px; }
 }
 button { font: inherit; }
 .resume { display: block; width: 100%; margin-top: 8px; }
-.send, .submit, .other-send, .choice, .resume {
+.cert-restart { margin-top: 8px; }
+.cert-restart-text { margin: 0 0 8px; }
+.restart { display: block; width: 100%; }
+.send, .submit, .other-send, .choice, .resume, .restart {
   border: 0; border-radius: 8px; padding: 8px 14px;
   background: var(--accent); color: var(--accent-text); font-weight: 600;
 }

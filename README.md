@@ -9,6 +9,8 @@ straight to the app. From the page you can:
 - type prompts, which show faded until Claude has them;
 - answer Claude's permission prompts and questions;
 - start a session that isn't running;
+- restart a session whose last turn failed with a certificate error, which a new process clears
+  when the computer's certificates changed after it started;
 - tap an image Claude names to open it, when the app's image sharing setting is on.
 
 The top bar shows today's spend as a share of today's budget. Arrows above the prompt box jump

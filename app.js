@@ -61,6 +61,10 @@ const state = {
   plainPaths: false,
   /** Reconnected with a session open, until the first list says whether it's still there. */
   reopening: false,
+  /** Whether the app takes `restartSession` for a row with `certError` (desktop-features.js). */
+  certRestart: false,
+  /** The session a restart was asked for, until its row's `certError` goes. */
+  restarting: null,
 };
 
 function el(tag, cls, text) {
@@ -228,6 +232,8 @@ function wipe({ keepDraft = false } = {}) {
   state.unseen.clear();
   state.images = false;
   state.plainPaths = false;
+  state.certRestart = false;
+  state.restarting = null;
   state.resuming = null;
   state.reopening = false;
   $(".session-list").replaceChildren();
@@ -237,6 +243,7 @@ function wipe({ keepDraft = false } = {}) {
   $(".prompt-reason").textContent = "";
   $(".prompt-reason").hidden = true;
   $(".resume").hidden = true;
+  $(".cert-restart").hidden = true;
   $(".composer").hidden = true;
   renderUsage(null);
   $(".since").textContent = "";
@@ -639,6 +646,10 @@ function renderComposer() {
   $(".resume").hidden = !canResume;
   $(".resume").disabled = state.resuming === state.openId;
   $(".resume").textContent = state.resuming === state.openId ? "Starting…" : "Start this session";
+  const canRestart = state.certRestart && !card && !!row?.live && !!row?.certError;
+  $(".cert-restart").hidden = !canRestart;
+  $(".restart").disabled = state.restarting === state.openId;
+  $(".restart").textContent = state.restarting === state.openId ? "Restarting…" : "Restart session";
   const input = $(".prompt-input");
   input.disabled = !!reason;
   $(".send").disabled = !!reason;
@@ -799,6 +810,15 @@ const stepSize = by => {
 };
 $(".size-down").addEventListener("click", () => stepSize(-1));
 $(".size-up").addEventListener("click", () => stepSize(1));
+
+$(".restart").addEventListener("click", () => {
+  if (!connection.send({ type: "restartSession", sessionId: state.openId })) {
+    toast(NOT_CONNECTED);
+    return;
+  }
+  state.restarting = state.openId;
+  renderComposer();
+});
 
 $(".resume").addEventListener("click", () => {
   if (!connection.send({ type: "resumeSession", sessionId: state.openId })) {
@@ -962,6 +982,7 @@ function onMessage(m) {
       state.sessions = Array.isArray(m.sessions) ? m.sessions : [];
       noteNeeds(state.sessions);
       if (state.resuming && state.sessions.find(s => s.id === state.resuming)?.live) state.resuming = null;
+      if (state.restarting && !state.sessions.find(s => s.id === state.restarting)?.certError) state.restarting = null;
       renderList();
       if (state.reopening) reopened();
       if (state.openId) {
@@ -988,6 +1009,8 @@ function onMessage(m) {
       break;
     case "welcome":
       setImages(m.features);
+      state.certRestart = appFeatures(m.features).certRestart;
+      if (state.openId) renderComposer();
       if (desktopTooOld(m.appVersion)) {
         const has = typeof m.appVersion === "string" && m.appVersion ? `version ${m.appVersion}` : "a version it doesn't say";
         $(".outdated-text").replaceChildren(
@@ -998,6 +1021,8 @@ function onMessage(m) {
       break;
     case "features":
       setImages(m.features);
+      state.certRestart = appFeatures(m.features).certRestart;
+      if (state.openId) renderComposer();
       imagesFeatures(m.features);
       break;
     case "usage":
@@ -1012,6 +1037,7 @@ function onMessage(m) {
       imagesAppError();
       dropRefusedGhost();
       state.resuming = null;
+      state.restarting = null;
       toast(String(m.message ?? "Something went wrong"));
       if (state.openId) renderComposer();
       break;
