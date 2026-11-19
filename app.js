@@ -1069,8 +1069,13 @@ const logLines = () => logEntries.map(e => `${clockTime(e.at)}  ${e.text}`);
 /** Kept apart from the log, so it outlasts the lines that are cleared. */
 const routeLine = () => `Current route: ${(state.status === "connected" && route) || "not connected"}`;
 
+/** Follows new lines while the newest is in view, so a screenshot shows the latest; scrolled up
+ * to read older ones, it stays put. */
 function renderLog() {
-  $(".diagnostics-log").textContent = logLines().join("\n");
+  const log = $(".diagnostics-log");
+  const following = log.scrollTop + log.clientHeight >= log.scrollHeight - 24;
+  log.textContent = logLines().join("\n");
+  if (following) log.scrollTop = log.scrollHeight;
   $(".diagnostics-route").textContent = routeLine();
 }
 

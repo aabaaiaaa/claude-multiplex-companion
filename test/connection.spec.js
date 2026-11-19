@@ -392,6 +392,37 @@ test("says the computer's network stops a direct route when its candidates show 
   await expect(log).not.toContainText("203.0.113.7");
 });
 
+test("keeps Connection details on the newest line as lines arrive, unless scrolled up", async ({ context }) => {
+  await recordPeerConnections(context);
+  const id = deskId();
+  await openDesk(context, id, { stall: true });
+  const phone = await context.newPage();
+  await phone.setViewportSize({ width: 360, height: 640 });
+  await phone.goto(phoneLink(id, TEST_CODE));
+  await expect.poll(() => phone.evaluate(() => Object.hasOwn(window.pcs.at(-1) ?? {}, "addIceCandidate"))).toBe(true);
+  await phone.locator(".menu-button").click();
+  await phone.locator(".menu-details").click();
+  const log = phone.locator(".diagnostics-log");
+  const send = (from, count) => phone.evaluate(async ([from, count]) => {
+    const pc = window.pcs.at(-1);
+    for (let port = from; port < from + count; port++) {
+      const candidate = `candidate:${port} 1 udp 2122260223 0a1b2c3d-1111-2222-3333-444455556666.local ${port} typ host generation 0`;
+      await pc.addIceCandidate({ candidate, sdpMid: "0" }).catch(() => {});
+    }
+  }, [from, count]);
+  const atEnd = () => log.evaluate(l => l.scrollHeight > l.clientHeight && l.scrollTop + l.clientHeight >= l.scrollHeight - 1);
+
+  await send(50000, 60);
+  await expect.poll(atEnd).toBe(true);
+
+  const lines = () => log.evaluate(l => l.textContent.split("\n").length);
+  const before = await lines();
+  await log.evaluate(l => { l.scrollTop = 0; });
+  await send(50100, 5);
+  await expect.poll(lines).toBeGreaterThanOrEqual(before + 5);
+  expect(await log.evaluate(l => l.scrollTop)).toBe(0);
+});
+
 // An empty version: the app couldn't read its own.
 for (const [appVersion, says] of [["0.25.0", "version 0.25.0"], ["0.24.3", "version 0.24.3"], ["", "a version it doesn't say"]]) {
   test(`asks for an update and ends the pairing when the app is too old (${appVersion || "empty version"})`, async ({ context }) => {
