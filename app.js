@@ -30,6 +30,14 @@ const ENDED_TEXT = {
   unavailable: "Pairing ended: the app isn't reachable, or it was closed. To connect again, scan the code in claude-multiplex.",
 };
 
+/** The hint when a direct connection stalls, by which network stops it (`Connection`'s `onTrouble`). */
+const TROUBLE = {
+  computer: "Having trouble connecting? The computer's network stops phones reaching it directly. Try the computer on another network, such as home Wi-Fi without a VPN.",
+  phone: "Having trouble connecting? This phone's network stops it reaching the computer directly. Try mobile data or a different Wi-Fi network.",
+  both: "Having trouble connecting? Neither network lets the two reach each other directly. Try the computer on another network, such as home Wi-Fi without a VPN, and this phone on mobile data or a different Wi-Fi network.",
+  default: "Having trouble connecting? If this phone is on the same Wi-Fi as your computer, try mobile data or a different Wi-Fi network: some networks stop devices on them reaching each other.",
+};
+
 const state = {
   sessions: [],
   openId: null,
@@ -1201,7 +1209,10 @@ const connection = new Connection({
     }
   },
   onMessage,
-  onTrouble() { $(".trouble").hidden = false; },
+  onTrouble(cause) {
+    $(".trouble-text").textContent = TROUBLE[cause] ?? TROUBLE.default;
+    $(".trouble").hidden = false;
+  },
   onEnded(reason) {
     closeViewer();
     state.openId = null;

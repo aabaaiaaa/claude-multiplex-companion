@@ -34,7 +34,7 @@ the PeerJS server that introduces them can't pose as either.
 ## How it connects
 
 - **The QR code** holds this page's address plus, after a `#`, the app's PeerJS id, the pairing
-  server and relay servers set in the app, and a one-time code. The page has no servers of its
+  server and STUN servers set in the app, and a one-time code. The page has no servers of its
   own. The app shows a new code every 30 seconds, and none works once a phone has paired.
 - **The pairing check:** the page proves it has the code, or later the key the app gave it, and
   the app proves itself back, both bound to the connection (see [PROTOCOL.md](PROTOCOL.md)). A
@@ -46,8 +46,13 @@ the PeerJS server that introduces them can't pose as either.
   ends and needs a new scan.
 - **The page** connects to that id over a WebRTC data channel, through the pairing server the link
   names, which must be https://. The link's STUN servers get it through home routers and mobile
-  data. There's no relay that passes the traffic on, so a phone on the same Wi-Fi as the computer
-  may not connect: after a stalled attempt the page suggests mobile data or another Wi-Fi network.
+  data, but the two must reach each other directly, and some networks stop that:
+  - **A network that gives a new public port for each server it reaches,** common on work
+    networks and VPNs. With two or more STUN servers, the page spots this on either side, and
+    after a stalled attempt it says which side's network to change.
+  - **The same Wi-Fi as the computer,** when the router keeps its devices apart or won't route
+    its own public address back in. After a stalled attempt the page suggests mobile data or
+    another Wi-Fi network.
 - **Connection details,** from the menu or the hint after a stalled attempt, open over the page and
   log each step, with a Copy button: states and
   the kinds of address each side offered, never the addresses.

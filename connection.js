@@ -71,7 +71,7 @@ export function usableServer(raw) {
   return url.protocol === "https:" || (url.protocol === "http:" && local) ? url.href : null;
 }
 
-/** The relay servers the link names; only `stun:` and `stuns:` ones, as the app sends no others. */
+/** The STUN servers the link names; only `stun:` and `stuns:` ones, as the app sends no others. */
 const stunServers = list => (Array.isArray(list) ? list : []).filter(s => typeof s === "string" && /^stuns?:/i.test(s));
 
 /**
@@ -114,7 +114,36 @@ export function describeCandidateLine(line) {
   return `${type} ${(parts[2] ?? "?").toLowerCase()}${parts[4]?.endsWith(".local") ? " (mDNS name)" : ""}`;
 }
 
-/** Where PeerJS reaches the pairing server, and the relay servers WebRTC uses, both from the link. */
+/** A candidate line's kind, protocol and address, kept in memory to judge the network; never logged. */
+export function parseCandidateLine(line) {
+  const parts = line.replace(/^a=/, "").split(" ");
+  const typ = parts.indexOf("typ");
+  return { type: (typ >= 0 && parts[typ + 1]) || "?", protocol: (parts[2] ?? "?").toLowerCase(), address: parts[4] ?? "", port: parts[5] ?? "" };
+}
+
+/**
+ * Whether one side's network gives it a new public port for each server it reaches: more distinct
+ * public (srflx) UDP addresses than local (host) UDP ones, as a network that keeps one mapping
+ * shows the same public address to every STUN server. That defeats a direct route. null when it
+ * can't tell: fewer than two STUN servers, or no host or srflx candidate yet.
+ */
+export function mappingVaries(candidates, stunServers) {
+  if (stunServers < 2) return null;
+  const udp = candidates.filter(c => c.protocol === "udp");
+  const hosts = udp.filter(c => c.type === "host").length;
+  const mapped = new Set(udp.filter(c => c.type === "srflx").map(c => `${c.address}:${c.port}`)).size;
+  return hosts && mapped ? mapped > hosts : null;
+}
+
+/** Which side's network stops a direct route, from each side's candidates: "computer", "phone",
+ *  "both", or null when neither shows it. */
+export function networkCause(local, remote, stunServers) {
+  const phone = mappingVaries(local, stunServers) === true;
+  const computer = mappingVaries(remote, stunServers) === true;
+  return phone && computer ? "both" : computer ? "computer" : phone ? "phone" : null;
+}
+
+/** Where PeerJS reaches the pairing server, and the STUN servers WebRTC uses, both from the link. */
 export function peerOptions(server, stun) {
   const url = new URL(server);
   const secure = url.protocol === "https:";
@@ -139,7 +168,8 @@ export function peerOptions(server, stun) {
  * "notConfirmed" (the person at the computer said this isn't their phone, or didn't answer),
  * "unverified" (whatever answered couldn't prove it's the app paired with), "disconnected",
  * "replaced" or "unavailable".
- * `onTrouble()` runs when a direct connection didn't open in time.
+ * `onTrouble(cause)` runs when a direct connection didn't open in time; `cause` names the network
+ * that stops one ("computer", "phone" or "both"), or is null when neither shows it.
  */
 export class Connection {
   constructor({ onStatus, onMessage, onEnded, onTrouble = () => {}, onLog = () => {}, onRoute = () => {} }) {
@@ -331,7 +361,7 @@ export class Connection {
     this.timer = null;
     this.dropPeer();
     const options = peerOptions(this.pairing.server, this.pairing.stun);
-    this.log(`Connecting via the pairing server, ${options.config.iceServers.length} relay servers`);
+    this.log(`Connecting via the pairing server, ${options.config.iceServers.length} STUN servers`);
     const peer = new Peer(crypto.randomUUID(), { ...options, debug: 2, logFunction: (...args) => this.log(`PeerJS: ${args.map(String).join(" ")}`) });
     this.peer = peer;
     peer.on("open", () => {
@@ -347,7 +377,7 @@ export class Connection {
       this.openTimer = setTimeout(() => {
         if (conn !== this.conn || conn.open) return;
         this.log(`No direct connection after ${CONNECT_TIMEOUT_MS / 1000}s`);
-        this.onTrouble();
+        this.onTrouble(this.networkCause(conn));
         // Once ICE has given up, the candidates were already reported.
         if (ICE_GAVE_UP.includes(conn.peerConnection?.iceConnectionState)) this.scheduleRetry();
         else this.reportCandidates(conn).finally(() => this.scheduleRetry());
@@ -426,6 +456,7 @@ export class Connection {
   watchIce(conn) {
     const pc = conn.peerConnection;
     if (!pc) return;
+    conn.candidates = { local: [], remote: [] };
     let reported = false;
     /** The route last logged, so only a change is logged again. */
     let shown = null;
@@ -477,7 +508,10 @@ export class Connection {
     const add = pc.addIceCandidate.bind(pc);
     pc.addIceCandidate = async candidate => {
       const line = candidate?.candidate;
-      if (line) this.log(`remote candidate received: ${describeCandidateLine(line)}`);
+      if (line) {
+        this.log(`remote candidate received: ${describeCandidateLine(line)}`);
+        conn.candidates.remote.push(parseCandidateLine(line));
+      }
       try {
         await add(candidate);
       } catch (err) {
@@ -487,28 +521,46 @@ export class Connection {
     };
     pc.addEventListener("icecandidate", e => {
       const c = e.candidate;
-      if (c) this.log(`local candidate: ${c.type ?? "?"} ${c.protocol ?? ""}${c.address?.endsWith(".local") ? " (mDNS name)" : ""}`);
+      if (!c) return;
+      this.log(`local candidate: ${c.type ?? "?"} ${c.protocol ?? ""}${c.address?.endsWith(".local") ? " (mDNS name)" : ""}`);
+      conn.candidates.local.push({ type: c.type ?? "?", protocol: (c.protocol ?? "?").toLowerCase(), address: c.address ?? "", port: String(c.port ?? "") });
     });
   }
 
-  /** The candidates each side offered and how each pair fared, from WebRTC's own stats. */
+  /** Which side's network stops a direct route on this connection, by the candidates seen so far. */
+  networkCause(conn) {
+    if (!conn.candidates) return null;
+    return networkCause(conn.candidates.local, conn.candidates.remote, this.pairing?.stun?.length ?? 0);
+  }
+
+  /** The candidates each side offered and how each pair fared, from WebRTC's own stats, then which
+   *  network, if either, stops a direct route. Once ICE has given up the stats may have lost the
+   *  computer's candidates and the pairs, so the candidates as they arrived stand in. Not polled
+   *  while ICE checks: Chrome can hand that report, without certificates, to the pairing check. */
   async reportCandidates(conn) {
     const pc = conn.peerConnection;
     if (!pc) return;
+    const now = { local: [], remote: [], pairs: [] };
     try {
-      const stats = await pc.getStats();
-      const kinds = { "local-candidate": [], "remote-candidate": [] };
-      const pairs = [];
-      stats.forEach(s => {
-        if (kinds[s.type]) kinds[s.type].push(`${s.candidateType}/${s.protocol}`);
-        if (s.type === "candidate-pair") pairs.push(`${s.state}${s.nominated ? " (nominated)" : ""}`);
+      (await pc.getStats()).forEach(s => {
+        if (s.type === "local-candidate") now.local.push(`${s.candidateType}/${s.protocol}`);
+        if (s.type === "remote-candidate") now.remote.push(`${s.candidateType}/${s.protocol}`);
+        if (s.type === "candidate-pair") now.pairs.push(`${s.state}${s.nominated ? " (nominated)" : ""}`);
       });
-      this.log(`This phone offered: ${kinds["local-candidate"].join(", ") || "none"}`);
-      this.log(`The computer offered: ${kinds["remote-candidate"].join(", ") || "none"}`);
-      this.log(`Candidate pairs: ${pairs.join(", ") || "none"}`);
     } catch (e) {
       this.log(`Couldn't read WebRTC stats: ${e}`);
     }
+    const arrived = conn.candidates ?? { local: [], remote: [] };
+    const kinds = list => list.map(c => `${c.type}/${c.protocol}`);
+    const either = (stats, seen) => (stats.length ? stats : seen).join(", ") || "none";
+    const gaveUp = ICE_GAVE_UP.includes(pc.iceConnectionState);
+    this.log(`This phone offered: ${either(now.local, kinds(arrived.local))}`);
+    this.log(`The computer offered: ${either(now.remote, kinds(arrived.remote))}`);
+    this.log(`Candidate pairs: ${now.pairs.join(", ") || (gaveUp ? "none left once the connection gave up" : "none")}`);
+    const cause = this.networkCause(conn);
+    const varies = "network gives it a new public port for each server it reaches, so a direct route is unlikely";
+    if (cause === "computer" || cause === "both") this.log(`The computer's ${varies}`);
+    if (cause === "phone" || cause === "both") this.log(`This phone's ${varies}`);
   }
 
   scheduleRetry() {

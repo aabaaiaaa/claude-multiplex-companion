@@ -274,7 +274,7 @@ test("asks for a scan when it was never paired", async ({ page }) => {
   await expect(page.locator(".screen-unpaired")).toBeVisible();
 });
 
-test("uses the pairing server and relay servers the link names, and keeps them for reconnects", async ({ context }) => {
+test("uses the pairing server and STUN servers the link names, and keeps them for reconnects", async ({ context }) => {
   await recordPeerConnections(context);
   const id = deskId();
   const desk = await openDesk(context, id);
@@ -334,6 +334,62 @@ test("suggests mobile data or another Wi-Fi when the connection stalls, and hide
   await openDesk(context, id);
   await expect(phone.locator(".status")).toHaveText("Connected", { timeout: 30_000 });
   await expect(phone.locator(".trouble")).toBeHidden();
+});
+
+test("tells which side's network gives a new public port per server, only when it can", async ({ page }) => {
+  await page.goto("/index.html");
+  const judge = (local, remote, stun) => page.evaluate(async ([local, remote, stun]) => {
+    const { mappingVaries, networkCause } = await import("/connection.js");
+    return { phone: mappingVaries(local, stun), computer: mappingVaries(remote, stun), cause: networkCause(local, remote, stun) };
+  }, [local, remote, stun]);
+  const c = (type, address = "", port = "", protocol = "udp") => ({ type, protocol, address, port });
+  const host = c("host", "x.local", "5000");
+  // The tester's log: the phone kept one mapping, the computer got one for each STUN server.
+  const phone = [host, c("srflx", "198.51.100.1", "6000")];
+  const computer = [host, c("srflx", "203.0.113.7", "40001"), c("srflx", "203.0.113.7", "40002")];
+  expect(await judge(phone, computer, 2)).toEqual({ phone: false, computer: true, cause: "computer" });
+  expect(await judge(computer, computer, 2)).toMatchObject({ cause: "both" });
+  expect(await judge(computer, phone, 2)).toMatchObject({ cause: "phone" });
+  // Two interfaces behind one NAT that keeps its mappings: one public address each.
+  const twoNics = [host, c("host", "y.local", "5001"), c("srflx", "198.51.100.1", "6000"), c("srflx", "198.51.100.1", "6001")];
+  expect(await judge(phone, twoNics, 2)).toMatchObject({ computer: false, cause: null });
+  // The same public address from both servers counts once.
+  expect(await judge(phone, [host, c("srflx", "198.51.100.1", "6000"), c("srflx", "198.51.100.1", "6000")], 2)).toMatchObject({ computer: false });
+  // TCP candidates don't count.
+  expect(await judge(phone, [host, c("srflx", "203.0.113.7", "1", "tcp"), c("srflx", "203.0.113.7", "2", "tcp")], 2)).toMatchObject({ computer: null });
+  // One STUN server can't show it, nor can a side with no public address yet.
+  expect(await judge(phone, computer, 1)).toEqual({ phone: null, computer: null, cause: null });
+  expect(await judge([host], [host], 2)).toEqual({ phone: null, computer: null, cause: null });
+});
+
+test("says the computer's network stops a direct route when its candidates show it", async ({ context }) => {
+  await recordPeerConnections(context);
+  const id = deskId();
+  await openDesk(context, id, { stall: true });
+  const phone = await context.newPage();
+  // Names that don't resolve: the phone gets no public address of its own, so only the computer's count.
+  await phone.goto(phoneLink(id, TEST_CODE, { stun: ["stun:stun1.invalid:3478", "stun:stun2.invalid:3478"] }));
+  // The page's wrapper, which records what the computer sends, is on the connection once it's set up.
+  await expect.poll(() => phone.evaluate(() => Object.hasOwn(window.pcs.at(-1) ?? {}, "addIceCandidate"))).toBe(true);
+  await phone.evaluate(async () => {
+    const pc = window.pcs.at(-1);
+    for (const candidate of [
+      "candidate:1 1 udp 2122260223 0a1b2c3d-1111-2222-3333-444455556666.local 54321 typ host generation 0",
+      "candidate:2 1 udp 1686052607 203.0.113.7 40001 typ srflx raddr 0.0.0.0 rport 0 generation 0",
+      "candidate:3 1 udp 1686052351 203.0.113.7 40002 typ srflx raddr 0.0.0.0 rport 0 generation 0",
+    ]) await pc.addIceCandidate({ candidate, sdpMid: "0" }).catch(() => {});
+  });
+  await expect(phone.locator(".trouble")).toBeVisible({ timeout: 30_000 });
+  await expect(phone.locator(".trouble")).toContainText("The computer's network stops phones reaching it directly");
+  await expect(phone.locator(".trouble")).not.toContainText("same Wi-Fi");
+  await phone.locator(".trouble-details").click();
+  const log = phone.locator(".diagnostics-log");
+  await expect(log).toContainText("Connecting via the pairing server, 2 STUN servers");
+  // The stats have none of what the computer sent, so it's told from what arrived.
+  await expect(log).toContainText("The computer offered: host/udp, srflx/udp, srflx/udp");
+  await expect(log).toContainText("The computer's network gives it a new public port for each server it reaches");
+  await expect(log).not.toContainText("This phone's network");
+  await expect(log).not.toContainText("203.0.113.7");
 });
 
 // An empty version: the app couldn't read its own.
