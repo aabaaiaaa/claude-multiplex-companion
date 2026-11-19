@@ -93,7 +93,7 @@ Once confirmed, reconnects are never asked again. An app from before this never 
 | `sendPrompt` | `sessionId`, `text` |
 | `resumeSession` | `sessionId`: starts a session whose row has `canResume` |
 | `restartSession` | `sessionId`: starts the claude of a session whose row has `certError` again, in the same row. Only with `certRestart` |
-| `answer` | `sessionId`, `cardId`, `choice`: `{kind:"option",index}`, `{kind:"options",indices}` (multi-select, or one index per question), `{kind:"text",text}` or `{kind:"reject"}` |
+| `answer` | `sessionId`, `cardId`, `choice`: `{kind:"option",index}`, `{kind:"options",indices}` (multi-select, or one index per question), `{kind:"picks",picks}` (one list for each question, for several questions where one is ticked; only to an app with `mixedQuestions`), `{kind:"text",text}` or `{kind:"reject"}` |
 | `openImage` | `id`, a fresh random id for this request, `sessionId`, `turn`: the turn number the reference is in, `ref`: the reference as Claude wrote it. Only with the `images` capability. Any request still in flight is cancelled first |
 | `cancelImage` | `id`: stop sending that image; sent when the viewer closes while it loads, or before a newer `openImage` |
 
@@ -161,6 +161,7 @@ and ignores names it doesn't know:
 | `images` | makes image references tappable and opens them | 0.26.0, while the app's image sharing setting is on |
 | `plainPaths` | counts plain full paths as image references too; only with `images` | 0.27.0, alongside `images` |
 | `certRestart` | offers Restart session for a running session whose row has `certError`, and sends `restartSession` | 0.29.0, always |
+| `mixedQuestions` | answers several questions where one is ticked, sending `picks`; without it, such a card says to answer in the app | 0.29.0, always |
 
 The screen lock comes before `welcome`, so it's said in `challenge` instead: `enrolUV` and
 `requireUV` (see *Screen lock*), first sent by 0.27.0, while the app's screen
@@ -172,6 +173,7 @@ The other way, the page names what it shows in `hello`'s `features`, so a newer 
 | Feature | The app | First read by |
 |---|---|---|
 | `planCards` | sends a `plan` card for Claude's plan prompt | 0.27.0 |
+| `mixedQuestions` | sends a card for several questions where one is ticked, and types its `picks` | 0.29.0 |
 
 A page change that needs new app behaviour adds a name here, with the app change that sends it,
 and goes live whenever it's ready: apps that don't send the name carry on as before.

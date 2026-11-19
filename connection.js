@@ -5,7 +5,7 @@ import { checkScreenLock, createScreenLock, uvChallenge } from "./screen-lock.js
 
 /** What this page shows beyond the base protocol, told to the app in `hello` so it sends only
  *  what the page can show (PROTOCOL.md). */
-export const PAGE_FEATURES = Object.freeze(["planCards"]);
+export const PAGE_FEATURES = Object.freeze(["planCards", "mixedQuestions"]);
 
 export const PAIRING_KEY = "cmx-companion-pairing";
 export const CLIENT_KEY = "cmx-companion-client";

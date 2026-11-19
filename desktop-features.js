@@ -10,6 +10,8 @@ export const FEATURES = Object.freeze({
   /** A running session whose last turn failed with a certificate error has `certError` on its
    *  row, and `restartSession` starts its claude again. */
   certRestart: "certRestart",
+  /** The app types an answer to several questions where one is ticked, sent as `picks`. */
+  mixedQuestions: "mixedQuestions",
 });
 
 /** For each name in FEATURES, whether the app's `features` list holds it. Anything else in the
@@ -18,5 +20,10 @@ export function appFeatures(features) {
   const list = Array.isArray(features) ? features : [];
   const has = name => list.includes(name);
   const images = has(FEATURES.images);
-  return { images, plainPaths: images && has(FEATURES.plainPaths), certRestart: has(FEATURES.certRestart) };
+  return {
+    images,
+    plainPaths: images && has(FEATURES.plainPaths),
+    certRestart: has(FEATURES.certRestart),
+    mixedQuestions: has(FEATURES.mixedQuestions),
+  };
 }

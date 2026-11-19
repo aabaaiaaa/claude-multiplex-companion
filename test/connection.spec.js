@@ -17,8 +17,8 @@ test("connects to the desktop and says hello", async ({ context }) => {
   const hello = (await deskReceived(desk)).find(m => m.type === "hello");
   expect(hello).toMatchObject({ v: 1, type: "hello" });
   expect(typeof hello.clientId).toBe("string");
-  // What it shows beyond the base protocol, so the app sends it plan cards.
-  expect(hello.features).toEqual(["planCards"]);
+  // What it shows beyond the base protocol, so the app sends it plan cards and mixed forms.
+  expect(hello.features).toEqual(["planCards", "mixedQuestions"]);
 });
 
 test("waits for the computer to confirm a new pairing, showing its code, then says hello", async ({ context }) => {

@@ -323,6 +323,32 @@ test("answers several questions at once, one choice each", async ({ context }) =
   await expect.poll(() => lastOfType(desk, "answer")).toMatchObject({ cardId: "card-5", choice: { kind: "options", indices: [2, 1] } });
 });
 
+const MIXED = { id: "card-6", kind: "question", questions: [
+  { header: "Tests", question: "Add tests too?", multiSelect: false, options: [{ label: "Yes" }, { label: "No" }] },
+  question(true),
+] };
+
+test("answers several questions where one is ticked, with picks, for an app that types them", async ({ context }) => {
+  const { desk, phone } = await openWithFeatures(context, LIVE, ["mixedQuestions"]);
+  await sendCard(desk, MIXED);
+  const card = phone.locator(".card");
+  const [picked, ticked] = [card.locator("fieldset").nth(0), card.locator("fieldset").nth(1)];
+  await expect(picked.locator("input[type=radio]")).toHaveCount(2);
+  await expect(ticked.locator("input[type=checkbox]")).toHaveCount(3);
+  await picked.getByLabel("No").check();
+  await expect(card.locator(".submit"), "the ticked question needs a tick too").toBeDisabled();
+  await ticked.getByLabel("parseLine").check();
+  await ticked.getByLabel("lineOf").check();
+  await card.locator(".submit").click();
+  await expect.poll(() => lastOfType(desk, "answer")).toMatchObject({ cardId: "card-6", choice: { kind: "picks", picks: [[1], [0, 2]] } });
+});
+
+test("says to answer in the app several questions where one is ticked, for an app that can't type them", async ({ context }) => {
+  const { desk, phone } = await openWithFeatures(context, LIVE, []);
+  await sendCard(desk, MIXED);
+  await expect(phone.locator(".card")).toHaveText("Answer this prompt in the app.");
+});
+
 // What the app sent and what was typed, none of which may be on the page while it isn't connected.
 const SECRETS = ["parser-work", "Add a test for the parser", "look at the parser first", "secret-card-summary", "of $12.40", "secret-toast", "half-typed note"];
 

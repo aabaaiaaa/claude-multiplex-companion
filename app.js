@@ -71,6 +71,8 @@ const state = {
   reopening: false,
   /** Whether the app takes `restartSession` for a row with `certError` (desktop-features.js). */
   certRestart: false,
+  /** Whether the app types `picks`, for several questions where one is ticked (desktop-features.js). */
+  mixedQuestions: false,
   /** The session a restart was asked for, until its row's `certError` goes. */
   restarting: null,
 };
@@ -578,9 +580,13 @@ function singleQuestion(card, q) {
   return box;
 }
 
+/** Several questions where one is ticked: answered only with `picks`, which only an app that says
+ *  `mixedQuestions` types. */
+const mixesTicks = card => card.questions.length > 1 && card.questions.some(q => q.multiSelect);
+
 function choiceQuestions(card) {
   const form = el("form");
-  const multi = card.questions.length === 1;
+  const one = card.questions.length === 1;
   card.questions.forEach((q, n) => {
     const set = el("fieldset");
     if (q.header) set.append(el("legend", "card-header", q.header));
@@ -588,7 +594,7 @@ function choiceQuestions(card) {
     q.options.forEach((o, index) => {
       const label = el("label", "pick");
       const input = el("input");
-      input.type = multi ? "checkbox" : "radio";
+      input.type = one || q.multiSelect ? "checkbox" : "radio";
       input.name = `q${n}`;
       input.value = String(index);
       label.append(input, optionLabel(o));
@@ -598,15 +604,17 @@ function choiceQuestions(card) {
   });
   const submit = el("button", "submit", "Submit");
   submit.type = "submit";
-  const ready = () => multi || card.questions.every((_, n) => form.querySelector(`input[name="q${n}"]:checked`));
+  const picked = n => [...form.querySelectorAll(`input[name="q${n}"]:checked`)].map(i => Number(i.value));
+  const ready = () => one || card.questions.every((_, n) => picked(n).length > 0);
   submit.disabled = !ready();
   form.addEventListener("change", () => { submit.disabled = !ready(); });
   form.addEventListener("submit", e => {
     e.preventDefault();
-    const indices = multi
-      ? [...form.querySelectorAll('input[name="q0"]:checked')].map(i => Number(i.value))
-      : card.questions.map((_, n) => Number(form.querySelector(`input[name="q${n}"]:checked`).value));
-    if (indices.length) answer(card, { kind: "options", indices });
+    if (mixesTicks(card)) answer(card, { kind: "picks", picks: card.questions.map((_, n) => picked(n)) });
+    else {
+      const indices = one ? picked(0) : card.questions.map((_, n) => picked(n)[0]);
+      if (indices.length) answer(card, { kind: "options", indices });
+    }
   });
   form.append(submit);
   return form;
@@ -628,6 +636,7 @@ function renderCard(card) {
   else if (card.kind === "confirm") box.append(confirmCard(card));
   else if (card.kind === "plan") box.append(planCard(card));
   else if (card.kind !== "question" || !Array.isArray(card.questions)) box.append(unknownCard());
+  else if (mixesTicks(card) && !state.mixedQuestions) box.append(unknownCard());
   else if (card.questions.length === 1 && !card.questions[0].multiSelect) box.append(singleQuestion(card, card.questions[0]));
   else box.append(choiceQuestions(card));
   if (state.answered.has(card.id)) for (const b of box.querySelectorAll("button, input")) b.disabled = true;
@@ -1018,6 +1027,7 @@ function onMessage(m) {
     case "welcome":
       setImages(m.features);
       state.certRestart = appFeatures(m.features).certRestart;
+      state.mixedQuestions = appFeatures(m.features).mixedQuestions;
       if (state.openId) renderComposer();
       if (desktopTooOld(m.appVersion)) {
         const has = typeof m.appVersion === "string" && m.appVersion ? `version ${m.appVersion}` : "a version it doesn't say";
@@ -1030,6 +1040,7 @@ function onMessage(m) {
     case "features":
       setImages(m.features);
       state.certRestart = appFeatures(m.features).certRestart;
+      state.mixedQuestions = appFeatures(m.features).mixedQuestions;
       if (state.openId) renderComposer();
       imagesFeatures(m.features);
       break;
