@@ -354,8 +354,10 @@ test("a drag at 2.5× moves the image but stops at its edge", async ({ page }) =
 /** A chat long enough to scroll, scrolled part way down; returns the phone. */
 async function scrolledChat(context) {
   const { desk, phone } = await open(context, ["images"]);
+  // The desk's own conversation comes first, or it would replace this one when it lands.
+  await expect(phone.locator(".chat .claude").first()).toHaveText("I'll look at the parser first.");
   await show(desk, "Check", Array.from({ length: 120 }, (_, i) => `Line ${i} of the reply, see \`shot${i}.png\`.`).join("\n\n"));
-  await expect(phone.locator(".chat .claude")).toBeVisible();
+  await expect(phone.locator(".chat .claude")).toContainText("Line 0 of the reply");
   await phone.evaluate(() => window.scrollTo(0, 600));
   await phone.waitForFunction(() => window.scrollY === 600);
   return phone;
